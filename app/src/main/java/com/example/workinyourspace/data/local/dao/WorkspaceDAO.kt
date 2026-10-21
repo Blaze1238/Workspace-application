@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.example.workinyourspace.data.local.entity.WhitelistedApps
 import com.example.workinyourspace.data.local.entity.Workspace
 import kotlinx.coroutines.flow.Flow
 
@@ -18,4 +19,10 @@ interface WorkspaceDAO {
 
     @Query("SELECT * FROM workspace")
     fun getAllWorkspaces() : Flow<List<Workspace>>
+
+    @Delete
+    suspend fun deleteWhitelistedApps(apps : List<WhitelistedApps>)
+
+    @Query("SELECT * FROM whitelisted_apps")
+    fun getAllWhitelistedApps() : List<WhitelistedApps>
 }

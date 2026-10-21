@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">WorkInYourSpace</string>
+    <string name="accessibility_desc">Required to perform blacklisted app blocking</string>
 </resources>

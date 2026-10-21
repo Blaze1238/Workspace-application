@@ -18,4 +18,6 @@ interface WhitelistedAppsDAO {
 
     @Query("SELECT * FROM whitelisted_apps where workspace_id = :workspaceId")
     fun getWhitelistedApps(workspaceId : Int) : Flow<List<WhitelistedApps>>
+
+
 }
