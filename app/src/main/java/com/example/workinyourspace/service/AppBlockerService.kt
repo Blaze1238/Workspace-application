@@ -59,4 +59,9 @@ class AppBlockerService : AccessibilityService(){
         serviceScope.cancel()
         Log.e("InterceptionEngine","Interrupted by OS")
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
+    }
 }
