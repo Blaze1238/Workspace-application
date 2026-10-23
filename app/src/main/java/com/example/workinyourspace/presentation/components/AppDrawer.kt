@@ -63,7 +63,7 @@ fun AppGridItem(
             modifier = Modifier.padding(8.dp)
         ) {
             Text(
-                text = app.appName,
+                text = app.name,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

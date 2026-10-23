@@ -21,7 +21,7 @@ fun MainLauncherScreen(
     var newWorkspaceName by remember { mutableStateOf("") }
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    val activeWorkspaceId by viewModel.activeWorkspaceId.collectAsStateWithLifecycle()
+    val activeWorkspaceId by viewModel.activeWorkspaceID.collectAsStateWithLifecycle()
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
 
     // If a workspace is selected for whitelist configuration, show WhitelistScreen
@@ -97,7 +97,7 @@ fun MainLauncherScreen(
                 Button(
                     onClick = {
                         if (newWorkspaceName.isNotBlank()) {
-                            viewModel.createWorkspace(newWorkspaceName)
+                            viewModel.addWorkspace(newWorkspaceName)
                             newWorkspaceName = ""
                             showCreateDialog = false
                         }

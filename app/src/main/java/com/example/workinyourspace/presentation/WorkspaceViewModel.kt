@@ -6,6 +6,8 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.example.workinyourspace.data.local.entity.GridPosition
+import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
 import com.example.workinyourspace.data.repository.SessionManager
 import com.example.workinyourspace.data.repository.WorkspaceRepository
@@ -19,6 +21,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.example.workinyourspace.domain.model.AppInfo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.take
 import kotlin.math.log
 
@@ -61,6 +66,43 @@ class WorkspaceViewModel @Inject constructor(
     fun deactivateWorkspace(){
         sessionMan.clearActiveWorkspace()
         _activeWorkspaceID.value = null
+    }
+
+    fun addWorkspace(newName : String){
+        viewModelScope.launch(Dispatchers.IO)  {
+            val newWorkspace = Workspace(name = newName)
+            workspaceRepo.addWorkspace(newWorkspace)
+        }
+    }
+
+    fun deleteWorkspace(workspace: Workspace){
+        viewModelScope.launch(Dispatchers.IO) {
+            if(sessionMan.getActiveWorkspaceID() == workspace.id)
+                sessionMan.clearActiveWorkspace()
+            workspaceRepo.deleteWorkspace(workspace)
+        }
+    }
+
+    fun toggleAppInWhitelist(workspaceId : Int, app : AppInfo, isCurrentlyWhitelisted : Boolean){
+        viewModelScope.launch(Dispatchers.IO){
+            val chosenApp = WhitelistedApp(workspaceId = workspaceId, packageName = app.packageName, customIntent = null, position = GridPosition(-1,-1))  //The position is a dummy since it is allowed but not placed
+
+            if(isCurrentlyWhitelisted){
+                workspaceRepo.removeWhitelistedAppByPackageName(chosenApp)
+            }else{
+                workspaceRepo.addWhitelistedApp(chosenApp)
+            }
+        }
+    }
+
+    fun getWhitelistedApps(workspaceId : Int) : Flow<List<WhitelistedApp>> {
+        return workspaceRepo.getWhitelistedApps(workspaceId)
+    }
+
+    fun updateAppPosition(workspaceId: Int, packageName: String, x: Int, y: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.updateAppPosition(workspaceId, packageName, x, y)
+        }
     }
 
     //For now this is a test only

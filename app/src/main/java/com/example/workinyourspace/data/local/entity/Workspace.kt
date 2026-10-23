@@ -7,7 +7,7 @@ import androidx.room.ColumnInfo
 data class Workspace(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "workspace_id")
-    val id : Int,
+    val id : Int = 0,
 
     @ColumnInfo(name = "workspace_name")
     val name : String,

@@ -54,7 +54,7 @@ fun WhitelistScreen(
                     app = app,
                     isWhitelisted = isWhitelisted,
                     onToggle = {
-                        viewModel.toggleAppInWhitelist(workspaceId, app)
+                        viewModel.toggleAppInWhitelist(workspaceId, app, isWhitelisted)
                     }
                 )
             }
@@ -82,7 +82,7 @@ fun WhitelistedAppRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = app.appName, style = MaterialTheme.typography.titleMedium)
+                Text(text = app.name, style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = app.packageName,
                     style = MaterialTheme.typography.bodySmall,

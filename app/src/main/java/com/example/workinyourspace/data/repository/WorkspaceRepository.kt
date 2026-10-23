@@ -3,7 +3,7 @@ package com.example.workinyourspace.data.repository
 import android.util.Log
 import com.example.workinyourspace.data.local.dao.WorkspaceDAO
 import com.example.workinyourspace.data.local.dao.WhitelistedAppsDAO
-import com.example.workinyourspace.data.local.entity.WhitelistedApps
+import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -15,13 +15,30 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         return workspaceDAO.getAllWorkspaces()
     }
 
-    fun getWhitelistedApps(workspaceID : Int) : Flow<List<WhitelistedApps>>{
+    fun getWhitelistedApps(workspaceID : Int) : Flow<List<WhitelistedApp>>{
         return whitelistedDAO.getWhitelistedApps(workspaceID)
     }
 
     //Test function
     suspend fun addWorkspace(workspace: Workspace){
         workspaceDAO.addWorkspace(workspace)
+    }
+
+    suspend fun deleteWorkspace(workspace : Workspace){
+        workspaceDAO.deleteWorkspace(workspace)
+    }
+
+    suspend fun removeWhitelistedApp(whitelistedApp : WhitelistedApp){
+        whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
+    }
+
+    suspend fun removeWhitelistedAppByPackageName(whitelistedApp : WhitelistedApp){
+        whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
+    }
+
+
+    suspend fun addWhitelistedApp(whitelistedApp : WhitelistedApp){
+        whitelistedDAO.addWhiteListedApp(whitelistedApp)
     }
 
     suspend fun deleteOrphanedApps(installedPackageName : Set<String>) = withContext(Dispatchers.IO){
@@ -33,5 +50,9 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
             workspaceDAO.deleteWhitelistedApps(orphanedApps)
             Log.d("Database Cleanup","All orphaned apps purged across all workspaces")
         }
+    }
+
+    suspend fun updateAppPosition(workspaceId : Int, packageName: String, x : Int, y: Int) {
+        whitelistedDAO.updateAppPosition(workspaceId,packageName,x,y)
     }
 }

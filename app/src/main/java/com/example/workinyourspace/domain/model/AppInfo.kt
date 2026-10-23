@@ -1,6 +1,5 @@
 package com.example.workinyourspace.domain.model
 
-import android.R
 import android.graphics.drawable.Drawable
 
 data class AppInfo(

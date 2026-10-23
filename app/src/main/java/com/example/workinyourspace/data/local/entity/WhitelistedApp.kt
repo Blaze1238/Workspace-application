@@ -25,10 +25,10 @@ data class GridPosition(
         ],
         indices = [Index(value = ["workspace_id"])]
     )
-data class WhitelistedApps(
+data class WhitelistedApp(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "whitelistapps_id")
-    val id : Int,
+    val id : Int = 0,
 
     @ColumnInfo(name = "workspace_id")
     val workspaceId : Int,
