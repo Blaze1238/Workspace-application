@@ -24,6 +24,18 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         workspaceDAO.addWorkspace(workspace)
     }
 
+    suspend fun deleteWorkspace(workspace: Workspace) {
+        workspaceDAO.deleteWorkspace(workspace)
+    }
+
+    suspend fun addWhitelistedApp(app: WhitelistedApps) {
+        whitelistedDAO.addWhiteListedApp(app)
+    }
+
+    suspend fun deleteWhitelistedApp(app: WhitelistedApps) {
+        whitelistedDAO.deleteWhiteListedApp(app)
+    }
+
     suspend fun deleteOrphanedApps(installedPackageName : Set<String>) = withContext(Dispatchers.IO){
         val allAppsInAllWorkSpaces = workspaceDAO.getAllWhitelistedApps()
 

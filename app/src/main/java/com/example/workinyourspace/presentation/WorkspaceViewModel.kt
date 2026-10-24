@@ -5,22 +5,24 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
+import com.example.workinyourspace.data.local.entity.GridPosition
+import com.example.workinyourspace.data.local.entity.WhitelistedApps
 import com.example.workinyourspace.data.local.entity.Workspace
 import com.example.workinyourspace.data.repository.SessionManager
 import com.example.workinyourspace.data.repository.WorkspaceRepository
+import com.example.workinyourspace.domain.model.AppInfo
 import com.example.workinyourspace.domain.repository.AppRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import com.example.workinyourspace.domain.model.AppInfo
-import kotlinx.coroutines.flow.take
-import kotlin.math.log
 
 @HiltViewModel
 class WorkspaceViewModel @Inject constructor(
@@ -31,13 +33,12 @@ class WorkspaceViewModel @Inject constructor(
 
     fun launchApp(packageName : String, context : Context){
         val packageManager = context.packageManager
-
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
 
         if(launchIntent != null){
             context.startActivity(launchIntent)
         }else{
-            Toast.makeText(context,"App not intstalled or present.",Toast.LENGTH_SHORT).show()
+            Toast.makeText(context,"App not installed or present.",Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -52,10 +53,27 @@ class WorkspaceViewModel @Inject constructor(
 
     private val _activeWorkspaceID = MutableStateFlow<Int?>(sessionMan.getActiveWorkspaceID())
     val activeWorkspaceID = _activeWorkspaceID.asStateFlow()
+    val activeWorkspaceId: StateFlow<Int?> = activeWorkspaceID
+
+    private val _isSelectingWorkspace = MutableStateFlow(false)
+    val isSelectingWorkspace = _isSelectingWorkspace.asStateFlow()
+
+    fun enterWorkspacePicker() {
+        _isSelectingWorkspace.value = true
+    }
+
+    fun exitWorkspacePicker() {
+        _isSelectingWorkspace.value = false
+    }
+
+    fun toggleWorkspacePicker() {
+        _isSelectingWorkspace.value = !_isSelectingWorkspace.value
+    }
 
     fun activateWorkspace(id : Int){
         sessionMan.setActiveWorkspaceID(id)
         _activeWorkspaceID.value = id
+        _isSelectingWorkspace.value = false
     }
 
     fun deactivateWorkspace(){
@@ -63,8 +81,65 @@ class WorkspaceViewModel @Inject constructor(
         _activeWorkspaceID.value = null
     }
 
-    //For now this is a test only
-    init{
+    fun createWorkspace(name: String, wallpaperUri: String? = null) {
+        viewModelScope.launch {
+            val newWorkspace = Workspace(id = 0, name = name, wallpaperURI = wallpaperUri)
+            workspaceRepo.addWorkspace(newWorkspace)
+        }
+    }
+
+    fun deleteWorkspace(workspace: Workspace) {
+        viewModelScope.launch {
+            if (activeWorkspaceID.value == workspace.id) {
+                deactivateWorkspace()
+            }
+            workspaceRepo.deleteWorkspace(workspace)
+        }
+    }
+
+    fun getWhitelistedApps(workspaceId: Int): Flow<List<WhitelistedApps>> {
+        return workspaceRepo.getWhitelistedApps(workspaceId)
+    }
+
+    fun addWhitelistedApp(workspaceId: Int, packageName: String, gridX: Int, gridY: Int, customIntent: String? = null) {
+        viewModelScope.launch {
+            val app = WhitelistedApps(
+                id = 0,
+                workspaceId = workspaceId,
+                customIntent = customIntent,
+                packageName = packageName,
+                position = GridPosition(x = gridX, y = gridY)
+            )
+            workspaceRepo.addWhitelistedApp(app)
+        }
+    }
+
+    fun removeWhitelistedApp(app: WhitelistedApps) {
+        viewModelScope.launch {
+            workspaceRepo.deleteWhitelistedApp(app)
+        }
+    }
+
+    fun toggleAppInWhitelist(workspaceId: Int, appInfo: AppInfo) {
+        viewModelScope.launch {
+            val currentWhitelisted = workspaceRepo.getWhitelistedApps(workspaceId).firstOrNull() ?: emptyList()
+            val existing = currentWhitelisted.find { it.packageName == appInfo.packageName }
+            if (existing != null) {
+                workspaceRepo.deleteWhitelistedApp(existing)
+            } else {
+                val app = WhitelistedApps(
+                    id = 0,
+                    workspaceId = workspaceId,
+                    customIntent = null,
+                    packageName = appInfo.packageName,
+                    position = GridPosition(x = 0, y = 0)
+                )
+                workspaceRepo.addWhitelistedApp(app)
+            }
+        }
+    }
+
+    init {
         Log.d("Hello","Hello Amith!")
         viewModelScope.launch {
             val ws = Workspace(id=1,name="Test Gym Workspace")
@@ -75,11 +150,9 @@ class WorkspaceViewModel @Inject constructor(
             val apps = installedAppsRepo.getInstalledApps()
             _installedApps.value = apps
 
-            //Test to check if all the apps installed on the user's phone is being returned
             installedApps.value.take(5).forEach { item -> Log.d("AppRegistryTest","AppRegistry test : ${item.name} -> ${item.packageName}") }
 
             val installedPackageNames = apps.map{ it.packageName }.toSet()
-
             workspaceRepo.deleteOrphanedApps(installedPackageNames)
         }
 
