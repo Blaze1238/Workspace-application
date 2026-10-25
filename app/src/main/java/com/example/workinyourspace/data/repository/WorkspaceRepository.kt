@@ -36,9 +36,13 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
     }
 
-
     suspend fun addWhitelistedApp(whitelistedApp : WhitelistedApp){
         whitelistedDAO.addWhiteListedApp(whitelistedApp)
+    }
+
+    suspend fun deleteWhitelistedApp(whitelistedApp : WhitelistedApp){
+        whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
+    }
     }
 
     suspend fun deleteOrphanedApps(installedPackageName : Set<String>) = withContext(Dispatchers.IO){
