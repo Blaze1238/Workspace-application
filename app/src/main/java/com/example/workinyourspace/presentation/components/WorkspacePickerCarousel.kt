@@ -177,11 +177,13 @@ fun WorkspacePickerCarousel(
                         }
 
                         if (workspaceItem != null) {
-                            OutlinedButton(
+                            Button(
                                 onClick = { onConfigureWhitelist(workspaceItem) },
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Manage Whitelist")
+                                Text("🖼️ Whitelist & Wallpaper", color = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
                         } else {
                             Text(

@@ -1,10 +1,18 @@
 package com.example.workinyourspace.presentation.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,19 +21,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
-import com.example.workinyourspace.data.local.entity.GridPosition
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.domain.model.AppInfo
 import com.example.workinyourspace.presentation.WorkspaceViewModel
-import com.example.workinyourspace.ui.theme.WorkInYourSpaceTheme
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -36,26 +48,36 @@ fun WorkspaceGridHome(
     installedApps: List<AppInfo>,
     viewModel: WorkspaceViewModel,
     onOpenConfiguration: () -> Unit,
-    onSelectSlotForPlacement: (gridX: Int, gridY: Int) -> Unit,
-    onRemoveWhitelistedApp: (WhitelistedApp) -> Unit,
+    onRemoveFromHomeScreen: (WhitelistedApp) -> Unit,
+    onSwipeUp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val columns = 4
-    val rows = 5
 
     val appMap = remember(installedApps) {
         installedApps.associateBy { it.packageName }
     }
 
-    val positionMap = remember(whitelistedApps) {
-        whitelistedApps.associateBy { Pair(it.position.x, it.position.y) }
+    // Filter apps that have been placed on the home screen canvas (coord_x >= 0f && coord_y >= 0f)
+    val placedApps = remember(whitelistedApps) {
+        whitelistedApps.filter { it.position.x >= 0f && it.position.y >= 0f }
     }
+
+    // State for tracking active home screen drag and trash bin hover
+    var activeDraggingApp by remember { mutableStateOf<WhitelistedApp?>(null) }
+    var isHoveringTrash by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures { _, dragAmount ->
+                    if (dragAmount < -30) {
+                        onSwipeUp()
+                    }
+                }
+            }
     ) {
         if (!wallpaperUri.isNullOrEmpty()) {
             AsyncImage(
@@ -64,142 +86,226 @@ fun WorkspaceGridHome(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
         }
 
-        Column(
+        // Top bar with workspace name and configuration button
+        Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(20.dp)
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Text(
-                        text = workspaceName ?: "Default Workspace",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onOpenConfiguration,
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = CircleShape
-                        )
-                ) {
-                    Text("⚙️", fontSize = 20.sp)
-                }
+                Text(
+                    text = workspaceName ?: "Default Workspace",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
             }
 
-            Column(
+            IconButton(
+                onClick = onOpenConfiguration,
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.SpaceEvenly
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = CircleShape
+                    )
             ) {
-                for (r in 0 until rows) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        for (c in 0 until columns) {
-                            val whitelistedApp = positionMap[Pair(c, r)]
-                            val appInfo = whitelistedApp?.let { appMap[it.packageName] }
+                Text("⚙️", fontSize = 20.sp)
+            }
+        }
 
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .aspectRatio(0.85f)
-                                    .padding(4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (whitelistedApp != null) {
-                                    val displayName = appInfo?.name ?: whitelistedApp.packageName.substringAfterLast('.')
+        // Freeform canvas for draggable shortcuts
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 80.dp, bottom = 100.dp)
+        ) {
+            placedApps.forEach { whitelistedApp ->
+                val appInfo = appMap[whitelistedApp.packageName]
+                val displayName = appInfo?.name ?: whitelistedApp.packageName.substringAfterLast('.')
 
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-                                            .combinedClickable(
-                                                onClick = {
-                                                    viewModel.launchApp(whitelistedApp.packageName, context)
-                                                },
-                                                onLongClick = {
-                                                    onRemoveWhitelistedApp(whitelistedApp)
-                                                }
-                                            )
-                                            .padding(6.dp),
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .background(
-                                                    MaterialTheme.colorScheme.primaryContainer,
-                                                    CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = displayName.take(1).uppercase(),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = displayName,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center
-                                        )
+                var offsetX by remember(whitelistedApp.id, whitelistedApp.position.x) { mutableStateOf(whitelistedApp.position.x) }
+                var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableStateOf(whitelistedApp.position.y) }
+                var isDragging by remember { mutableStateOf(false) }
+
+                val bitmap = remember(appInfo?.icon) {
+                    try {
+                        appInfo?.icon?.toBitmap(width = 96, height = 96)?.asImageBitmap()
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                        .size(84.dp)
+                        .graphicsLayer {
+                            alpha = if (isDragging) 0.6f else 1.0f
+                        }
+                        .pointerInput(whitelistedApp.id, whitelistedApp.position.x, whitelistedApp.position.y) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    activeDraggingApp = whitelistedApp
+                                    isDragging = true
+                                },
+                                onDragEnd = {
+                                    isDragging = false
+                                    if (isHoveringTrash) {
+                                        onRemoveFromHomeScreen(whitelistedApp)
+                                    } else {
+                                        viewModel.updateAppPosition(whitelistedApp.workspaceId, whitelistedApp.packageName, offsetX, offsetY)
                                     }
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .border(
-                                                width = 1.dp,
-                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { onSelectSlotForPlacement(c, r) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "+",
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                        )
-                                    }
+                                    activeDraggingApp = null
+                                    isHoveringTrash = false
+                                },
+                                onDragCancel = {
+                                    isDragging = false
+                                    activeDraggingApp = null
+                                    isHoveringTrash = false
                                 }
+                            ) { change, dragAmount ->
+                                change.consume()
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
+                                isHoveringTrash = offsetY < 120f
                             }
                         }
+                        .combinedClickable(
+                            onClick = {
+                                viewModel.launchApp(whitelistedApp.packageName, context)
+                            },
+                            onLongClick = {
+                                onRemoveFromHomeScreen(whitelistedApp)
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = displayName,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = displayName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
+        }
+
+        // Sliding Trash Bin Bar at Top when dragging an app shortcut
+        AnimatedVisibility(
+            visible = activeDraggingApp != null,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        ) {
+            val trashBgColor by animateColorAsState(
+                targetValue = if (isHoveringTrash) Color.Red.copy(alpha = 0.9f) else Color.DarkGray.copy(alpha = 0.85f),
+                label = "TrashBgColor"
+            )
 
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
+                color = trashBgColor,
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .height(56.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Text("🗑️", fontSize = 24.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isHoveringTrash) "Release to Remove" else "Drag here to Remove",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // Bottom dock with configuration app & swipe-up handle
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clickable { onSwipeUp() }
+                    .padding(vertical = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(alpha = 0.4f))
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Swipe up for App Drawer",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.DarkGray.copy(alpha = 0.8f)
             ) {
                 Row(
                     modifier = Modifier
@@ -225,33 +331,13 @@ fun WorkspaceGridHome(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Configuration",
+                            text = "Configuration App",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = Color.White
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Preview(showBackground = true, showSystemUi = true, name = "Workspace Grid Home Preview")
-@Composable
-fun WorkspaceGridHomePreview() {
-    WorkInYourSpaceTheme {
-        WorkspaceGridHome(
-            workspaceName = "Gym Mode",
-            wallpaperUri = null,
-            whitelistedApps = listOf(
-                WhitelistedApp(id = 1, workspaceId = 1, customIntent = null, packageName = "com.spotify.music", position = GridPosition(0, 0)),
-                WhitelistedApp(id = 2, workspaceId = 1, customIntent = null, packageName = "com.google.android.youtube", position = GridPosition(1, 0))
-            ),
-            installedApps = emptyList(),
-            viewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
-            onOpenConfiguration = {},
-            onSelectSlotForPlacement = { _, _ -> },
-            onRemoveWhitelistedApp = {}
-        )
     }
 }

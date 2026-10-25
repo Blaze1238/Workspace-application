@@ -8,9 +8,9 @@ import androidx.room.ForeignKey
 import androidx.room.ForeignKey.Companion.CASCADE
 import androidx.room.Index
 
-data class GridPosition(
-    @ColumnInfo(name = "grid_x") val x : Int,
-    @ColumnInfo(name = "grid_y") val y : Int,
+data class FreeformPosition(
+    @ColumnInfo(name = "coord_x") val x : Float,
+    @ColumnInfo(name = "coord_y") val y : Float,
 )
 
 @Entity(
@@ -40,5 +40,5 @@ data class WhitelistedApp(
     val packageName : String,
 
     @Embedded
-    val position: GridPosition
+    val position: FreeformPosition
 )

@@ -1,5 +1,8 @@
 package com.example.workinyourspace.presentation
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +31,14 @@ fun WhitelistScreen(
         whitelistedApps.map { it.packageName }.toSet()
     }
 
+    val wallpaperLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            viewModel.updateWorkspaceWallpaper(workspaceId, it.toString())
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -35,6 +46,11 @@ fun WhitelistScreen(
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Text("←")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { wallpaperLauncher.launch("image/*") }) {
+                        Text("🖼️")
                     }
                 }
             )

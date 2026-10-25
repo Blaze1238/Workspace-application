@@ -5,7 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.workinyourspace.data.local.entity.GridPosition
+import com.example.workinyourspace.data.local.entity.FreeformPosition
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
 import com.example.workinyourspace.data.repository.SessionManager
@@ -54,6 +54,10 @@ class WorkspaceViewModel @Inject constructor(
     private val _activeWorkspaceID = MutableStateFlow<Int?>(sessionMan.getActiveWorkspaceID())
     val activeWorkspaceID = _activeWorkspaceID.asStateFlow()
     val activeWorkspaceId: StateFlow<Int?> = activeWorkspaceID
+
+    fun refreshActiveWorkspace() {
+        _activeWorkspaceID.value = sessionMan.getActiveWorkspaceID()
+    }
 
     private val _isSelectingWorkspace = MutableStateFlow(false)
     val isSelectingWorkspace = _isSelectingWorkspace.asStateFlow()
@@ -105,14 +109,14 @@ class WorkspaceViewModel @Inject constructor(
         return workspaceRepo.getWhitelistedApps(workspaceId)
     }
 
-    fun addWhitelistedApp(workspaceId: Int, packageName: String, gridX: Int, gridY: Int, customIntent: String? = null) {
+    fun addWhitelistedApp(workspaceId: Int, packageName: String, x: Float, y: Float, customIntent: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val app = WhitelistedApp(
                 id = 0,
                 workspaceId = workspaceId,
                 customIntent = customIntent,
                 packageName = packageName,
-                position = GridPosition(x = gridX, y = gridY)
+                position = FreeformPosition(x = x, y = y)
             )
             workspaceRepo.addWhitelistedApp(app)
         }
@@ -124,53 +128,42 @@ class WorkspaceViewModel @Inject constructor(
         }
     }
 
+    fun updateWorkspaceWallpaper(workspaceId: Int, wallpaperUri: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.updateWorkspaceWallpaper(workspaceId, wallpaperUri)
+        }
+    }
+
     fun toggleAppInWhitelist(workspaceId: Int, app: AppInfo, isCurrentlyWhitelisted: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            val chosenApp = WhitelistedApp(
-                workspaceId = workspaceId,
-                packageName = app.packageName,
-                customIntent = null,
-                position = GridPosition(-1, -1)
-            )
             if (isCurrentlyWhitelisted) {
-                workspaceRepo.removeWhitelistedApp(chosenApp)
+                workspaceRepo.removeWhitelistedAppByPackageName(workspaceId, app.packageName)
             } else {
-                workspaceRepo.addWhitelistedApp(chosenApp)
-            }
-        }
-    }
-
-    fun toggleAppInWhitelist(workspaceId: Int, appInfo: AppInfo) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val currentWhitelisted = workspaceRepo.getWhitelistedApps(workspaceId).firstOrNull() ?: emptyList()
-            val existing = currentWhitelisted.find { it.packageName == appInfo.packageName }
-            if (existing != null) {
-                workspaceRepo.deleteWhitelistedApp(existing)
-            } else {
-                val app = WhitelistedApp(
-                    id = 0,
+                val newApp = WhitelistedApp(
                     workspaceId = workspaceId,
+                    packageName = app.packageName,
                     customIntent = null,
-                    packageName = appInfo.packageName,
-                    position = GridPosition(x = 0, y = 0)
+                    position = FreeformPosition(x = -1f, y = -1f)
                 )
-                workspaceRepo.addWhitelistedApp(app)
+                workspaceRepo.addWhitelistedApp(newApp)
             }
         }
     }
 
-    fun updateAppPosition(workspaceId: Int, packageName: String, x: Int, y: Int) {
+    fun updateAppPosition(workspaceId: Int, packageName: String, x: Float, y: Float) {
         viewModelScope.launch(Dispatchers.IO) {
             workspaceRepo.updateAppPosition(workspaceId, packageName, x, y)
         }
     }
 
+    fun removeFromHomeScreen(workspaceId: Int, packageName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.updateAppPosition(workspaceId, packageName, -1f, -1f)
+        }
+    }
+
     init {
         Log.d("Hello", "Hello Amith!")
-        viewModelScope.launch(Dispatchers.IO) {
-            val ws = Workspace(id = 1, name = "Test Gym Workspace")
-            workspaceRepo.addWorkspace(ws)
-        }
 
         viewModelScope.launch(Dispatchers.IO) {
             val apps = installedAppsRepo.getInstalledApps()
@@ -179,7 +172,9 @@ class WorkspaceViewModel @Inject constructor(
             apps.take(5).forEach { item -> Log.d("AppRegistryTest", "AppRegistry test : ${item.name} -> ${item.packageName}") }
 
             val installedPackageNames = apps.map { it.packageName }.toSet()
-            workspaceRepo.deleteOrphanedApps(installedPackageNames)
+            if (installedPackageNames.isNotEmpty()) {
+                workspaceRepo.deleteOrphanedApps(installedPackageNames)
+            }
         }
 
         viewModelScope.launch {

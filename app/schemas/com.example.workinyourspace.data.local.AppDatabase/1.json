@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "6c13687ce0fc01682ef41797e0f924db",
+    "identityHash": "314302bbaadadd0cde7a7b179336f8d1",
     "entities": [
       {
         "tableName": "workspace",
@@ -42,7 +42,7 @@
       },
       {
         "tableName": "whitelisted_apps",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`whitelistapps_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workspace_id` INTEGER NOT NULL, `custom_intent` TEXT, `package_name` TEXT NOT NULL, `grid_x` INTEGER NOT NULL, `grid_y` INTEGER NOT NULL, FOREIGN KEY(`workspace_id`) REFERENCES `workspace`(`workspace_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`whitelistapps_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workspace_id` INTEGER NOT NULL, `custom_intent` TEXT, `package_name` TEXT NOT NULL, `coord_x` REAL NOT NULL, `coord_y` REAL NOT NULL, FOREIGN KEY(`workspace_id`) REFERENCES `workspace`(`workspace_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -69,14 +69,14 @@
           },
           {
             "fieldPath": "position.x",
-            "columnName": "grid_x",
-            "affinity": "INTEGER",
+            "columnName": "coord_x",
+            "affinity": "REAL",
             "notNull": true
           },
           {
             "fieldPath": "position.y",
-            "columnName": "grid_y",
-            "affinity": "INTEGER",
+            "columnName": "coord_y",
+            "affinity": "REAL",
             "notNull": true
           }
         ],
@@ -114,7 +114,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6c13687ce0fc01682ef41797e0f924db')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '314302bbaadadd0cde7a7b179336f8d1')"
     ]
   }
 }

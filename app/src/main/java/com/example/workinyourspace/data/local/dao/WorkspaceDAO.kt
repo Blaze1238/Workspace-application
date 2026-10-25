@@ -25,4 +25,7 @@ interface WorkspaceDAO {
 
     @Query("SELECT * FROM whitelisted_apps")
     fun getAllWhitelistedApps() : List<WhitelistedApp>
+
+    @Query("UPDATE workspace SET wallpaper_uri = :wallpaperUri WHERE workspace_id = :workspaceId")
+    suspend fun updateWallpaper(workspaceId: Int, wallpaperUri: String?)
 }

@@ -32,8 +32,8 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
     }
 
-    suspend fun removeWhitelistedAppByPackageName(whitelistedApp : WhitelistedApp){
-        whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
+    suspend fun removeWhitelistedAppByPackageName(workspaceID: Int, packageName: String){
+        whitelistedDAO.removeByPackageName(workspaceID,packageName)
     }
 
     suspend fun addWhitelistedApp(whitelistedApp : WhitelistedApp){
@@ -42,7 +42,6 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
 
     suspend fun deleteWhitelistedApp(whitelistedApp : WhitelistedApp){
         whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
-    }
     }
 
     suspend fun deleteOrphanedApps(installedPackageName : Set<String>) = withContext(Dispatchers.IO){
@@ -56,7 +55,11 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         }
     }
 
-    suspend fun updateAppPosition(workspaceId : Int, packageName: String, x : Int, y: Int) {
+    suspend fun updateAppPosition(workspaceId : Int, packageName: String, x : Float, y: Float) {
         whitelistedDAO.updateAppPosition(workspaceId,packageName,x,y)
+    }
+
+    suspend fun updateWorkspaceWallpaper(workspaceId: Int, wallpaperUri: String?) {
+        workspaceDAO.updateWallpaper(workspaceId, wallpaperUri)
     }
 }

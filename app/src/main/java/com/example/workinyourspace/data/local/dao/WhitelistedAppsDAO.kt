@@ -22,6 +22,6 @@ interface WhitelistedAppsDAO {
     @Query("SELECT * FROM whitelisted_apps where workspace_id = :workspaceId")
     fun getWhitelistedApps(workspaceId : Int) : Flow<List<WhitelistedApp>>
 
-    @Query("UPDATE whitelisted_apps SET grid_x = :x, grid_y = :y WHERE workspace_id = :workspaceId AND package_name = :packageName")
-    suspend fun updateAppPosition(workspaceId: Int, packageName: String, x: Int, y: Int)
+    @Query("UPDATE whitelisted_apps SET coord_x = :x, coord_y = :y WHERE workspace_id = :workspaceId AND package_name = :packageName")
+    suspend fun updateAppPosition(workspaceId: Int, packageName: String, x: Float, y: Float)
 }

@@ -7,7 +7,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import androidx.room.Room
-import androidx.room.RoomDatabase
 import com.example.workinyourspace.data.local.dao.WhitelistedAppsDAO
 import com.example.workinyourspace.data.local.dao.WorkspaceDAO
 import dagger.hilt.components.SingletonComponent
@@ -19,8 +18,10 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context : Context) : AppDatabase{
-        return Room.databaseBuilder(context, AppDatabase :: class.java, "AppDatabase.db").addCallback(
-            DatabaseCallback()).build()
+        return Room.databaseBuilder(context, AppDatabase::class.java, "AppDatabase.db")
+            .fallbackToDestructiveMigration(true)
+            .addCallback(DatabaseCallback())
+            .build()
     }
 
     @Provides
