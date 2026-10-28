@@ -59,7 +59,8 @@ class WorkspaceViewModel @Inject constructor(
         _activeWorkspaceID.value = sessionMan.getActiveWorkspaceID()
     }
 
-    private val _isSelectingWorkspace = MutableStateFlow(false)
+    // Default to true so app always opens into the Workspace Picker Carousel on launch
+    private val _isSelectingWorkspace = MutableStateFlow(true)
     val isSelectingWorkspace = _isSelectingWorkspace.asStateFlow()
 
     fun enterWorkspacePicker() {

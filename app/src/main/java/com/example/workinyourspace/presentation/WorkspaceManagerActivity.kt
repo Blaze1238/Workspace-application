@@ -53,7 +53,6 @@ fun WorkspaceManagerScreen(
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
 
     var configuringWorkspace by remember { mutableStateOf<Workspace?>(null) }
-    var showCreateDialog by remember { mutableStateOf(false) }
 
     configuringWorkspace?.let { workspace ->
         WhitelistScreen(
@@ -79,9 +78,6 @@ fun WorkspaceManagerScreen(
         },
         onConfigureWhitelist = { workspace ->
             configuringWorkspace = workspace
-        },
-        onCreateNewWorkspace = {
-            showCreateDialog = true
         },
         onClosePicker = {
             onFinish()
