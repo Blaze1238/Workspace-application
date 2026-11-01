@@ -1,0 +1,210 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "12e7e328e891a710dc481f431bae5c08",
+    "entities": [
+      {
+        "tableName": "workspace",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`workspace_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workspace_name` TEXT NOT NULL, `is_default` INTEGER NOT NULL DEFAULT 0, `wallpaper_uri` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "workspace_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "workspace_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "is_default",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "wallpaperURI",
+            "columnName": "wallpaper_uri",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "workspace_id"
+          ]
+        }
+      },
+      {
+        "tableName": "whitelisted_apps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`whitelistapps_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workspace_id` INTEGER NOT NULL, `custom_intent` TEXT, `package_name` TEXT NOT NULL, `coord_x` REAL NOT NULL, `coord_y` REAL NOT NULL, FOREIGN KEY(`workspace_id`) REFERENCES `workspace`(`workspace_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "whitelistapps_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workspaceId",
+            "columnName": "workspace_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customIntent",
+            "columnName": "custom_intent",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "package_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.x",
+            "columnName": "coord_x",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position.y",
+            "columnName": "coord_y",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "whitelistapps_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_whitelisted_apps_workspace_id",
+            "unique": false,
+            "columnNames": [
+              "workspace_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_whitelisted_apps_workspace_id` ON `${TABLE_NAME}` (`workspace_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "workspace",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workspace_id"
+            ],
+            "referencedColumns": [
+              "workspace_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "workspace_widgets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`widget_id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workspace_id` INTEGER NOT NULL, `app_widget_id` INTEGER NOT NULL, `provider_package` TEXT NOT NULL, `provider_class` TEXT NOT NULL, `coord_x` REAL NOT NULL, `coord_y` REAL NOT NULL, `span_x` INTEGER NOT NULL, `span_y` INTEGER NOT NULL, FOREIGN KEY(`workspace_id`) REFERENCES `workspace`(`workspace_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "widget_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workspaceId",
+            "columnName": "workspace_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appWidgetId",
+            "columnName": "app_widget_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerPackage",
+            "columnName": "provider_package",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerClass",
+            "columnName": "provider_class",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "x",
+            "columnName": "coord_x",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "y",
+            "columnName": "coord_y",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spanX",
+            "columnName": "span_x",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spanY",
+            "columnName": "span_y",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "widget_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_workspace_widgets_workspace_id",
+            "unique": false,
+            "columnNames": [
+              "workspace_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_workspace_widgets_workspace_id` ON `${TABLE_NAME}` (`workspace_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "workspace",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workspace_id"
+            ],
+            "referencedColumns": [
+              "workspace_id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '12e7e328e891a710dc481f431bae5c08')"
+    ]
+  }
+}
