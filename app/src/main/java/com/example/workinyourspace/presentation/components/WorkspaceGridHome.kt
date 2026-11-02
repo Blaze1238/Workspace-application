@@ -21,8 +21,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,6 +50,7 @@ import coil.compose.AsyncImage
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.domain.model.AppInfo
 import com.example.workinyourspace.presentation.WorkspaceViewModel
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 data class GridCell(val col: Int, val row: Int)
@@ -101,17 +104,18 @@ fun WorkspaceGridHome(
     var showAssistiveMenu by remember { mutableStateOf(false) }
     var pendingDeleteApp by remember { mutableStateOf<WhitelistedApp?>(null) }
 
+    // Wallpaper Zoom/Adjust State
+    var pendingWallpaperUri by remember { mutableStateOf<String?>(null) }
+    var wallpaperScale by remember { mutableFloatStateOf(1.0f) }
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            if (workspaceId != null) {
-                viewModel.updateWorkspaceWallpaper(workspaceId, it.toString())
-            }
+            pendingWallpaperUri = it.toString()
+            wallpaperScale = 1.0f
         }
     }
-
-    var assistiveTouchOffset by remember { mutableStateOf(Offset(20f, 600f)) }
 
     BoxWithConstraints(
         modifier = modifier
@@ -121,14 +125,24 @@ fun WorkspaceGridHome(
         val canvasWidthPx = with(density) { maxWidth.toPx() }
         val canvasHeightPx = with(density) { maxHeight.toPx() }
 
+        // Default AssistiveTouch position to Top Right
+        var assistiveTouchOffset by remember { mutableStateOf(Offset(canvasWidthPx - with(density) { 72.dp.toPx() }, 100f)) }
+
         val gridCols = 4
-        val gridRows = 6
+        val maxPlacedRow = remember(placedApps) {
+            placedApps.maxOfOrNull {
+                ((it.position.y + 50f) / (canvasHeightPx / 6f)).toInt()
+            } ?: 5
+        }
+        val gridRows = max(6, maxPlacedRow + 2)
 
         val cellWidthPx = canvasWidthPx / gridCols.toFloat()
-        val cellHeightPx = (canvasHeightPx - with(density) { 140.dp.toPx() }) / gridRows.toFloat()
+        val cellHeightPx = (canvasHeightPx - with(density) { 140.dp.toPx() }) / 6f
 
         val iconWidthPx = with(density) { 72.dp.toPx() }
         val iconHeightPx = with(density) { 72.dp.toPx() }
+
+        val scrollState = rememberScrollState()
 
         // Long click anywhere on background canvas opens Carousel!
         Box(
@@ -139,7 +153,10 @@ fun WorkspaceGridHome(
                     onLongClick = onOpenWorkspacePicker
                 )
         ) {
-            WorkspaceWallpaper(wallpaperUri = wallpaperUri)
+            WorkspaceWallpaper(
+                wallpaperUri = wallpaperUri,
+                scale = wallpaperScale
+            )
         }
 
         // Top Status Bar Protection Overlay
@@ -155,19 +172,20 @@ fun WorkspaceGridHome(
                 .statusBarsPadding()
         )
 
-        // Freeform canvas with 4x6 grid alignment
+        // Multi-Row Vertical Scrolling Grid Canvas
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .padding(top = 16.dp, bottom = 80.dp)
+                .verticalScroll(scrollState)
         ) {
             placedApps.forEach { whitelistedApp ->
                 val appInfo = appMap[whitelistedApp.packageName]
                 val displayName = appInfo?.name ?: whitelistedApp.packageName.substringAfterLast('.')
 
-                var offsetX by remember(whitelistedApp.id, whitelistedApp.position.x) { mutableStateOf(whitelistedApp.position.x) }
-                var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableStateOf(whitelistedApp.position.y) }
+                var offsetX by remember(whitelistedApp.id, whitelistedApp.position.x) { mutableFloatStateOf(whitelistedApp.position.x) }
+                var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableFloatStateOf(whitelistedApp.position.y) }
                 var isDragging by remember { mutableStateOf(false) }
 
                 val bitmap = remember(appInfo?.icon) {
@@ -323,7 +341,7 @@ fun WorkspaceGridHome(
             }
         }
 
-        // AssistiveTouch Floating Button
+        // AssistiveTouch Floating Button (Defaults to Top Right)
         Box(
             modifier = Modifier
                 .offset { IntOffset(assistiveTouchOffset.x.roundToInt(), assistiveTouchOffset.y.roundToInt()) }
@@ -536,6 +554,62 @@ fun WorkspaceGridHome(
             }
         }
 
+        // Wallpaper Zoom / Adjust Dialog
+        pendingWallpaperUri?.let { uri ->
+            AlertDialog(
+                onDismissRequest = { pendingWallpaperUri = null },
+                title = { Text("Adjust Wallpaper Zoom") },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 200.dp, height = 260.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black)
+                        ) {
+                            AsyncImage(
+                                model = uri,
+                                contentDescription = "Wallpaper Preview",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = wallpaperScale
+                                        scaleY = wallpaperScale
+                                    },
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(text = "Zoom: ${(wallpaperScale * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+                        Slider(
+                            value = wallpaperScale,
+                            onValueChange = { wallpaperScale = it },
+                            valueRange = 1.0f..2.5f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (workspaceId != null) {
+                                viewModel.updateWorkspaceWallpaper(workspaceId, uri)
+                            }
+                            pendingWallpaperUri = null
+                        }
+                    ) {
+                        Text("Set Wallpaper")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingWallpaperUri = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         // Delete App Confirmation Dialog
         pendingDeleteApp?.let { app ->
             val appInfo = appMap[app.packageName]
@@ -568,6 +642,7 @@ fun WorkspaceGridHome(
 @Composable
 fun WorkspaceWallpaper(
     wallpaperUri: String?,
+    scale: Float = 1.0f,
     modifier: Modifier = Modifier
 ) {
     when {
@@ -652,7 +727,12 @@ fun WorkspaceWallpaper(
             AsyncImage(
                 model = wallpaperUri,
                 contentDescription = "Workspace Wallpaper",
-                modifier = modifier.fillMaxSize(),
+                modifier = modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
                 contentScale = ContentScale.Crop
             )
         }
@@ -685,9 +765,5 @@ fun findNearestEmptyCell(
             }
         }
     }
-    return BestCellOrTarget(bestCell, targetCol, targetRow)
-}
-
-private fun BestCellOrTarget(best: GridCell, fallbackCol: Int, fallbackRow: Int): GridCell {
-    return best
+    return bestCell
 }

@@ -3,14 +3,20 @@ package com.example.workinyourspace.data.repository
 import android.util.Log
 import com.example.workinyourspace.data.local.dao.WorkspaceDAO
 import com.example.workinyourspace.data.local.dao.WhitelistedAppsDAO
+import com.example.workinyourspace.data.local.dao.WorkspaceWidgetDAO
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
+import com.example.workinyourspace.data.local.entity.WorkspaceWidget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-class WorkspaceRepository @Inject constructor(private val workspaceDAO : WorkspaceDAO, private val whitelistedDAO : WhitelistedAppsDAO){
+class WorkspaceRepository @Inject constructor(
+    private val workspaceDAO : WorkspaceDAO,
+    private val whitelistedDAO : WhitelistedAppsDAO,
+    private val widgetDAO : WorkspaceWidgetDAO
+){
     fun getWorkspaces() : Flow<List<Workspace>>{
         return workspaceDAO.getAllWorkspaces()
     }
@@ -19,7 +25,22 @@ class WorkspaceRepository @Inject constructor(private val workspaceDAO : Workspa
         return whitelistedDAO.getWhitelistedApps(workspaceID)
     }
 
-    //Test function
+    fun getWorkspaceWidgets(workspaceID: Int) : Flow<List<WorkspaceWidget>> {
+        return widgetDAO.getWorkspaceWidgets(workspaceID)
+    }
+
+    suspend fun addWidget(widget: WorkspaceWidget) {
+        widgetDAO.addWidget(widget)
+    }
+
+    suspend fun deleteWidgetById(widgetId: Int) {
+        widgetDAO.deleteWidgetById(widgetId)
+    }
+
+    suspend fun updateWidgetPosition(widgetId: Int, x: Float, y: Float) {
+        widgetDAO.updateWidgetPosition(widgetId, x, y)
+    }
+
     suspend fun addWorkspace(workspace: Workspace){
         workspaceDAO.addWorkspace(workspace)
     }

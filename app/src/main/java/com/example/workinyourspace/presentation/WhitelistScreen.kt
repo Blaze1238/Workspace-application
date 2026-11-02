@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,8 +28,21 @@ fun WhitelistScreen(
     val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
     val whitelistedApps by viewModel.getWhitelistedApps(workspaceId).collectAsStateWithLifecycle(initialValue = emptyList())
 
+    var searchQuery by remember { mutableStateOf("") }
+
     val whitelistedPackageNames = remember(whitelistedApps) {
         whitelistedApps.map { it.packageName }.toSet()
+    }
+
+    val filteredApps = remember(installedApps, searchQuery) {
+        if (searchQuery.isBlank()) {
+            installedApps
+        } else {
+            val query = searchQuery.trim().lowercase()
+            installedApps.filter {
+                it.name.lowercase().contains(query) || it.packageName.lowercase().contains(query)
+            }
+        }
     }
 
     val wallpaperLauncher = rememberLauncherForActivityResult(
@@ -57,22 +71,40 @@ fun WhitelistScreen(
         },
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxSize()
         ) {
-            items(installedApps) { app ->
-                val isWhitelisted = whitelistedPackageNames.contains(app.packageName)
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("🔍 Search installed apps...") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
-                WhitelistedAppRow(
-                    app = app,
-                    isWhitelisted = isWhitelisted,
-                    onToggle = {
-                        viewModel.toggleAppInWhitelist(workspaceId, app, isWhitelisted)
-                    }
-                )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                items(filteredApps, key = { it.packageName }) { app ->
+                    val isWhitelisted = whitelistedPackageNames.contains(app.packageName)
+
+                    WhitelistedAppRow(
+                        app = app,
+                        isWhitelisted = isWhitelisted,
+                        onToggle = {
+                            viewModel.toggleAppInWhitelist(workspaceId, app, isWhitelisted)
+                        }
+                    )
+                }
             }
         }
     }

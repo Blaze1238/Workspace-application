@@ -1,10 +1,12 @@
 package com.example.workinyourspace.presentation.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -17,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -63,14 +66,20 @@ fun WorkspacePickerCarousel(
 ) {
     val items = remember(workspaces) { workspaces }
 
-    val initialIndex = remember(items, activeWorkspaceId) {
+    val actualInitialIndex = remember(items, activeWorkspaceId) {
         val found = items.indexOfFirst { it.id == activeWorkspaceId }
         if (found >= 0) found else 0
     }
 
+    // Circular Queue: Loop only when items.size > 1
+    val virtualPageCount = if (items.size > 1) Int.MAX_VALUE else items.size
+    val startPage = if (items.size > 1) {
+        (Int.MAX_VALUE / 2) - ((Int.MAX_VALUE / 2) % items.size) + actualInitialIndex
+    } else 0
+
     val pagerState = rememberPagerState(
-        initialPage = if (items.isNotEmpty()) initialIndex.coerceIn(0, items.size - 1) else 0,
-        pageCount = { items.size }
+        initialPage = startPage,
+        pageCount = { virtualPageCount }
     )
 
     var tappedIndex by remember { mutableStateOf<Int?>(null) }
@@ -79,6 +88,11 @@ fun WorkspacePickerCarousel(
     var showCreateDialog by remember { mutableStateOf(false) }
     var newWorkspaceName by remember { mutableStateOf("") }
     var deletingWorkspace by remember { mutableStateOf<Workspace?>(null) }
+
+    val isDuplicateName = remember(newWorkspaceName, workspaces) {
+        val trimmed = newWorkspaceName.trim().lowercase()
+        workspaces.any { getWorkspaceDisplayName(it.name).trim().lowercase() == trimmed }
+    }
 
     Box(
         modifier = modifier
@@ -144,7 +158,8 @@ fun WorkspacePickerCarousel(
                         .fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 60.dp)
                 ) { page ->
-                    val workspaceItem = items[page]
+                    val actualIndex = if (items.isNotEmpty()) page % items.size else 0
+                    val workspaceItem = items[actualIndex]
                     val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
 
                     val baseScale = lerp(
@@ -162,7 +177,7 @@ fun WorkspacePickerCarousel(
                     val isTapped = (tappedIndex == page)
                     val targetTapScale by animateFloatAsState(
                         targetValue = if (isTapped) 1.25f else baseScale,
-                        animationSpec = tween(durationMillis = 300),
+                        animationSpec = spring(stiffness = 300f),
                         label = "TapZoomAnimation",
                         finishedListener = {
                             if (isTapped) {
@@ -188,6 +203,13 @@ fun WorkspacePickerCarousel(
                                 if (workspaceItem.id == activeWorkspaceId) MaterialTheme.colorScheme.primaryContainer
                                 else MaterialTheme.colorScheme.surface
                             )
+                            .pointerInput(workspaceItem.id) {
+                                detectVerticalDragGestures { _, dragAmount ->
+                                    if (dragAmount > 35f) {
+                                        onSelectWorkspace(workspaceItem.id)
+                                    }
+                                }
+                            }
                             .clickable {
                                 tappedIndex = page
                             }
@@ -232,6 +254,13 @@ fun WorkspacePickerCarousel(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
 
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Swipe down to open 🪂",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
                                 if (workspaceItem.id == activeWorkspaceId) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
@@ -272,28 +301,38 @@ fun WorkspacePickerCarousel(
             }
         }
 
-        // Create Workspace Dialog
+        // Create Workspace Dialog with Name Uniqueness Validation
         if (showCreateDialog) {
             AlertDialog(
                 onDismissRequest = { showCreateDialog = false },
                 title = { Text("Create New Workspace") },
                 text = {
-                    OutlinedTextField(
-                        value = newWorkspaceName,
-                        onValueChange = { newWorkspaceName = it },
-                        label = { Text("Workspace Name (e.g. Gym, Study)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column {
+                        OutlinedTextField(
+                            value = newWorkspaceName,
+                            onValueChange = { newWorkspaceName = it },
+                            label = { Text("Workspace Name (e.g. Gym, Study)") },
+                            isError = isDuplicateName,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (isDuplicateName) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "A workspace named '${newWorkspaceName.trim()}' already exists!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     Button(
+                        enabled = newWorkspaceName.isNotBlank() && !isDuplicateName,
                         onClick = {
-                            if (newWorkspaceName.isNotBlank()) {
-                                viewModel.addWorkspace(newWorkspaceName)
-                                newWorkspaceName = ""
-                                showCreateDialog = false
-                            }
+                            viewModel.addWorkspace(newWorkspaceName.trim())
+                            newWorkspaceName = ""
+                            showCreateDialog = false
                         }
                     ) {
                         Text("Create")

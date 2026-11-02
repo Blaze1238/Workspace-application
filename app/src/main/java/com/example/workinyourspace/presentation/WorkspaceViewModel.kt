@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.workinyourspace.data.local.entity.FreeformPosition
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
+import com.example.workinyourspace.data.local.entity.WorkspaceWidget
 import com.example.workinyourspace.data.repository.SessionManager
 import com.example.workinyourspace.data.repository.WorkspaceRepository
 import com.example.workinyourspace.domain.model.AppInfo
@@ -86,15 +87,15 @@ class WorkspaceViewModel @Inject constructor(
         _activeWorkspaceID.value = null
     }
 
-    fun addWorkspace(name: String, wallpaperUri: String? = null) {
+    fun addWorkspace(name: String, isDefault: Boolean = false, wallpaperUri: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
-            val newWorkspace = Workspace(id = 0, name = name, wallpaperURI = wallpaperUri)
+            val newWorkspace = Workspace(id = 0, name = name, isDefault = isDefault, wallpaperURI = wallpaperUri)
             workspaceRepo.addWorkspace(newWorkspace)
         }
     }
 
     fun createWorkspace(name: String, wallpaperUri: String? = null) {
-        addWorkspace(name, wallpaperUri)
+        addWorkspace(name = name, isDefault = false, wallpaperUri = wallpaperUri)
     }
 
     fun deleteWorkspace(workspace: Workspace) {
@@ -108,6 +109,28 @@ class WorkspaceViewModel @Inject constructor(
 
     fun getWhitelistedApps(workspaceId: Int): Flow<List<WhitelistedApp>> {
         return workspaceRepo.getWhitelistedApps(workspaceId)
+    }
+
+    fun getWorkspaceWidgets(workspaceId: Int): Flow<List<WorkspaceWidget>> {
+        return workspaceRepo.getWorkspaceWidgets(workspaceId)
+    }
+
+    fun addWidget(widget: WorkspaceWidget) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.addWidget(widget)
+        }
+    }
+
+    fun deleteWidgetById(widgetId: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.deleteWidgetById(widgetId)
+        }
+    }
+
+    fun updateWidgetPosition(widgetId: Int, x: Float, y: Float) {
+        viewModelScope.launch(Dispatchers.IO) {
+            workspaceRepo.updateWidgetPosition(widgetId, x, y)
+        }
     }
 
     fun addWhitelistedApp(workspaceId: Int, packageName: String, x: Float, y: Float, customIntent: String? = null) {
@@ -170,11 +193,59 @@ class WorkspaceViewModel @Inject constructor(
             val apps = installedAppsRepo.getInstalledApps()
             _installedApps.value = apps
 
-            apps.take(5).forEach { item -> Log.d("AppRegistryTest", "AppRegistry test : ${item.name} -> ${item.packageName}") }
-
             val installedPackageNames = apps.map { it.packageName }.toSet()
             if (installedPackageNames.isNotEmpty()) {
                 workspaceRepo.deleteOrphanedApps(installedPackageNames)
+            }
+
+            // Ensure "Home" workspace is ALWAYS created on clean load if empty
+            val allWorkspaces = workspaceRepo.getWorkspaces().firstOrNull() ?: emptyList()
+            if (allWorkspaces.isEmpty()) {
+                workspaceRepo.addWorkspace(Workspace(id = 0, name = "Home", isDefault = true))
+            }
+
+            val updatedWorkspaces = workspaceRepo.getWorkspaces().firstOrNull() ?: emptyList()
+            val homeWs = updatedWorkspaces.find { it.name.lowercase() == "home" || it.isDefault }
+            if (homeWs != null) {
+                val homeApps = workspaceRepo.getWhitelistedApps(homeWs.id).firstOrNull() ?: emptyList()
+                if (homeApps.isEmpty()) {
+                    val defaultPackages = listOf(
+                        "com.android.chrome",
+                        "com.google.android.youtube",
+                        "com.google.android.apps.maps",
+                        "com.google.android.gm",
+                        "com.android.vending",
+                        "com.google.android.dialer",
+                        "com.android.dialer",
+                        "com.google.android.deskclock",
+                        "com.android.camera"
+                    )
+
+                    var cellIndex = 0
+                    val cols = 4
+                    val cellW = 180f
+                    val cellH = 220f
+
+                    installedPackageNames.forEach { pkg ->
+                        if (defaultPackages.any { pkg.contains(it) || it.contains(pkg) } || cellIndex < 4) {
+                            if (cellIndex < 8) {
+                                val c = cellIndex % cols
+                                val r = cellIndex / cols
+                                val x = c * cellW + 20f
+                                val y = r * cellH + 40f
+                                workspaceRepo.addWhitelistedApp(
+                                    WhitelistedApp(
+                                        workspaceId = homeWs.id,
+                                        packageName = pkg,
+                                        customIntent = null,
+                                        position = FreeformPosition(x = x, y = y)
+                                    )
+                                )
+                                cellIndex++
+                            }
+                        }
+                    }
+                }
             }
         }
 

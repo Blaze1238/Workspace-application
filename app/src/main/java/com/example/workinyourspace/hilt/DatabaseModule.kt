@@ -9,6 +9,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.workinyourspace.data.local.dao.WhitelistedAppsDAO
 import com.example.workinyourspace.data.local.dao.WorkspaceDAO
+import com.example.workinyourspace.data.local.dao.WorkspaceWidgetDAO
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -32,5 +33,10 @@ object DatabaseModule {
     @Provides
     fun provideWhitelistedDAO(database : AppDatabase) : WhitelistedAppsDAO{
         return database.whitelistedAppsDAO()
+    }
+
+    @Provides
+    fun provideWorkspaceWidgetDAO(database : AppDatabase) : WorkspaceWidgetDAO{
+        return database.workspaceWidgetDAO()
     }
 }
