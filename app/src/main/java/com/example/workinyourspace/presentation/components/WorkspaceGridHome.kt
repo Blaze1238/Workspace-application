@@ -119,8 +119,9 @@ fun WorkspaceGridHome(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            pendingWallpaperUri = it.toString()
-            wallpaperScale = 1.0f
+            if (workspaceId != null) {
+                viewModel.saveWorkspaceWallpaper(context, workspaceId, it)
+            }
         }
     }
 
@@ -529,7 +530,11 @@ fun WorkspaceGridHome(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    PermissionsPrompt(modifier = Modifier.fillMaxWidth())
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }

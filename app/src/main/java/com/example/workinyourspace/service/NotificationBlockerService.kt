@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class NotificationBlockerService :  NotificationListenerService(){
+class NotificationBlockerService : NotificationListenerService(){
 
     @Inject
     lateinit var sessionMan : SessionManager
@@ -23,28 +23,43 @@ class NotificationBlockerService :  NotificationListenerService(){
     @Inject
     lateinit var workspaceRepo : WorkspaceRepository
 
-    private val notifCheckCoroutine  = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
+    private val notifCheckCoroutine = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
 
         val packageName = sbn?.packageName ?: return
 
-        if(packageName == applicationContext.packageName) return
+        Log.d("NotificationBlocker", "Notification posted from package -> $packageName")
 
-        if(sbn.isOngoing) return
+        if (packageName == applicationContext.packageName) return
+        if (sbn.isOngoing) return
 
         notifCheckCoroutine.launch {
-            val currentWorkspaceID = sessionMan.getActiveWorkspaceID() ?: return@launch
+            try {
+                if (!::sessionMan.isInitialized || !::workspaceRepo.isInitialized) {
+                    Log.e("NotificationBlocker", "Hilt dependencies not yet initialized")
+                    return@launch
+                }
 
-            val allowedApps = workspaceRepo.getWhitelistedApps(currentWorkspaceID).first()
+                val currentWorkspaceID = sessionMan.getActiveWorkspaceID()
+                if (currentWorkspaceID == null) {
+                    Log.d("NotificationBlocker", "No active workspace session. Allowing notification.")
+                    return@launch
+                }
 
-            val isAllowed = allowedApps.any{ it.packageName == packageName }
+                val allowedApps = workspaceRepo.getWhitelistedApps(currentWorkspaceID).first()
 
-            if(!isAllowed){
-                cancelNotification(sbn.key)
-                Log.d("NotificationBlocker", "Blocked notification from blacklisted app -> $packageName")
+                val isAllowed = allowedApps.any{ it.packageName == packageName }
+
+                if (!isAllowed) {
+                    cancelNotification(sbn.key)
+                    Log.d("NotificationBlocker", "Successfully blocked and canceled notification from blacklisted app -> $packageName")
+                } else {
+                    Log.d("NotificationBlocker", "Notification from whitelisted app allowed -> $packageName")
+                }
+            } catch (e: Exception) {
+                Log.e("NotificationBlocker", "Error handling notification", e)
             }
         }
     }

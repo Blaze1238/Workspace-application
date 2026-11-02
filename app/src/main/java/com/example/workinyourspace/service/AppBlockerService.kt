@@ -31,27 +31,56 @@ class AppBlockerService : AccessibilityService(){
 
         val packageName = event.packageName?.toString() ?: return
 
-        if(packageName == "com.android.systemui" || packageName == this.packageName) return
+        // Always allow launcher itself, system UI, keyboards (IME), settings, phone dialer, launchers, and recents overview
+        val defaultAllowed = setOf(
+            this.packageName,
+            "com.android.systemui",
+            "com.android.settings",
+            "com.google.android.settings",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.samsung.android.dialer",
+            "com.google.android.inputmethod.latin",
+            "com.sec.android.inputmethod",
+            "inputmethod",
+            "launcher",
+            "recents",
+            "overview",
+            "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher",
+            "com.sec.android.app.launcher",
+            "com.miui.home"
+        )
+
+        if (defaultAllowed.any { packageName.contains(it, ignoreCase = true) }) return
 
         Log.d("InterceptionEngine","App trying to launch -> $packageName")
 
         serviceScope.launch {
-            val workspaceID = sessionMan.getActiveWorkspaceID() ?: return@launch
-
-            val whitelistedApps = workspaceRepo.getWhitelistedApps(workspaceID).first()
-
-            val isAllowed = whitelistedApps.any{it.packageName == packageName}
-
-            if(!isAllowed){
-                Log.e("InterceptEngine","App is blacklisted. Forcefully opening home")
-
-                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                if (!::workspaceRepo.isInitialized || !::sessionMan.isInitialized) {
+                    Log.e("InterceptionEngine", "Hilt dependencies not yet initialized in AppBlockerService")
+                    return@launch
                 }
-                startActivity(homeIntent)
-            }
 
+                val workspaceID = sessionMan.getActiveWorkspaceID() ?: return@launch
+
+                val whitelistedApps = workspaceRepo.getWhitelistedApps(workspaceID).first()
+
+                val isAllowed = whitelistedApps.any{it.packageName == packageName}
+
+                if(!isAllowed){
+                    Log.e("InterceptEngine","App is blacklisted. Forcefully opening home")
+
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(homeIntent)
+                }
+            } catch (e: Exception) {
+                Log.e("InterceptionEngine", "Error handling accessibility event", e)
+            }
         }
     }
 

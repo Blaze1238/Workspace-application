@@ -1,6 +1,9 @@
 package com.example.workinyourspace.presentation
 
 import android.content.Context
+import android.net.Uri
+import java.io.File
+import java.io.FileOutputStream
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
@@ -130,6 +133,28 @@ class WorkspaceViewModel @Inject constructor(
     fun updateWidgetPosition(widgetId: Int, x: Float, y: Float) {
         viewModelScope.launch(Dispatchers.IO) {
             workspaceRepo.updateWidgetPosition(widgetId, x, y)
+        }
+    }
+
+    fun saveWorkspaceWallpaper(context: Context, workspaceId: Int, contentUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val wallpapersDir = File(context.filesDir, "wallpapers").apply { if (!exists()) mkdirs() }
+                wallpapersDir.listFiles()?.filter { it.name.startsWith("workspace_wallpaper_${workspaceId}_") }?.forEach { it.delete() }
+
+                val destFile = File(wallpapersDir, "workspace_wallpaper_${workspaceId}_${System.currentTimeMillis()}.jpg")
+                context.contentResolver.openInputStream(contentUri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                val savedFileUri = Uri.fromFile(destFile).toString()
+                workspaceRepo.updateWorkspaceWallpaper(workspaceId, savedFileUri)
+                Log.d("WallpaperSave", "Saved permanent wallpaper: $savedFileUri")
+            } catch (e: Exception) {
+                Log.e("WallpaperSave", "Failed to save permanent wallpaper", e)
+            }
         }
     }
 

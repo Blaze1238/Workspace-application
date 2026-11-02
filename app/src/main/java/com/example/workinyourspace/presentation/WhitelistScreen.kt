@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.workinyourspace.domain.model.AppInfo
@@ -34,22 +35,38 @@ fun WhitelistScreen(
         whitelistedApps.map { it.packageName }.toSet()
     }
 
-    val filteredApps = remember(installedApps, searchQuery) {
+    val context = LocalContext.current
+
+    val filteredApps = remember(installedApps, searchQuery, context) {
+        val launcherPkg = context.packageName
+        val baseList = installedApps.filter { it.packageName != launcherPkg }
         if (searchQuery.isBlank()) {
-            installedApps
+            baseList
         } else {
             val query = searchQuery.trim().lowercase()
-            installedApps.filter {
+            baseList.filter {
                 it.name.lowercase().contains(query) || it.packageName.lowercase().contains(query)
             }
         }
+    }
+
+    var croppingImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    croppingImageUri?.let { uri ->
+        WallpaperCropScreen(
+            workspaceId = workspaceId,
+            imageUri = uri,
+            viewModel = viewModel,
+            onComplete = { croppingImageUri = null }
+        )
+        return
     }
 
     val wallpaperLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            viewModel.updateWorkspaceWallpaper(workspaceId, it.toString())
+            croppingImageUri = it
         }
     }
 
