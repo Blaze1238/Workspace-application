@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -18,6 +19,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -117,10 +124,23 @@ fun WorkspaceGridHome(
         }
     }
 
+    // NestedScrollConnection to intercept swipe-up gesture anywhere on the canvas
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -20f) {
+                    onOpenAppDrawer()
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF181A20))
+            .nestedScroll(nestedScrollConnection)
     ) {
         val canvasWidthPx = with(density) { maxWidth.toPx() }
         val canvasHeightPx = with(density) { maxHeight.toPx() }
@@ -144,14 +164,36 @@ fun WorkspaceGridHome(
 
         val scrollState = rememberScrollState()
 
-        // Long click anywhere on background canvas opens Carousel!
+        val haptic = LocalHapticFeedback.current
+        var isLongPressingCanvas by remember { mutableStateOf(false) }
+        val canvasScale by animateFloatAsState(
+            targetValue = if (isLongPressingCanvas) 0.96f else 1.0f,
+            animationSpec = tween(150),
+            label = "CanvasLongPressScale"
+        )
+
+        // Long click anywhere on background canvas opens Carousel with Haptic & Visual Feedback!
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = onOpenWorkspacePicker
-                )
+                .graphicsLayer {
+                    scaleX = canvasScale
+                    scaleY = canvasScale
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            isLongPressingCanvas = true
+                            tryAwaitRelease()
+                            isLongPressingCanvas = false
+                        },
+                        onLongPress = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isLongPressingCanvas = false
+                            onOpenWorkspacePicker()
+                        }
+                    )
+                }
         ) {
             WorkspaceWallpaper(
                 wallpaperUri = wallpaperUri,
@@ -179,6 +221,20 @@ fun WorkspaceGridHome(
                 .statusBarsPadding()
                 .padding(top = 16.dp, bottom = 80.dp)
                 .verticalScroll(scrollState)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            isLongPressingCanvas = true
+                            tryAwaitRelease()
+                            isLongPressingCanvas = false
+                        },
+                        onLongPress = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isLongPressingCanvas = false
+                            onOpenWorkspacePicker()
+                        }
+                    )
+                }
         ) {
             placedApps.forEach { whitelistedApp ->
                 val appInfo = appMap[whitelistedApp.packageName]

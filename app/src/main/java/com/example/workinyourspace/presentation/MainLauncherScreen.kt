@@ -2,7 +2,9 @@ package com.example.workinyourspace.presentation
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -105,40 +107,50 @@ fun MainLauncherScreen(
         val iconWidthPx = with(density) { 72.dp.toPx() }
         val iconHeightPx = with(density) { 72.dp.toPx() }
 
-        if (isSelectingWorkspace) {
-            WorkspacePickerCarousel(
-                workspaces = workspaces,
-                activeWorkspaceId = activeWorkspaceId,
-                viewModel = viewModel,
-                onSelectWorkspace = { id ->
-                    if (id != null) {
-                        viewModel.activateWorkspace(id)
-                    } else {
-                        viewModel.deactivateWorkspace()
+        AnimatedContent(
+            targetState = isSelectingWorkspace,
+            transitionSpec = {
+                if (targetState) {
+                    // Zoom Out into Carousel
+                    (scaleIn(initialScale = 1.15f, animationSpec = tween(400)) + fadeIn(tween(400)))
+                        .togetherWith(scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(tween(400)))
+                } else {
+                    // Zoom In into Active Workspace Home Screen
+                    (scaleIn(initialScale = 0.8f, animationSpec = tween(400)) + fadeIn(tween(400)))
+                        .togetherWith(scaleOut(targetScale = 1.15f, animationSpec = tween(400)) + fadeOut(tween(400)))
+                }
+            },
+            label = "WorkspaceZoomTransition",
+            modifier = Modifier.fillMaxSize()
+        ) { selecting ->
+            if (selecting) {
+                WorkspacePickerCarousel(
+                    workspaces = workspaces,
+                    activeWorkspaceId = activeWorkspaceId,
+                    viewModel = viewModel,
+                    onSelectWorkspace = { id ->
+                        if (id != null) {
+                            viewModel.activateWorkspace(id)
+                        } else {
+                            viewModel.deactivateWorkspace()
+                            viewModel.exitWorkspacePicker()
+                        }
+                    },
+                    onConfigureWhitelist = { workspace ->
+                        viewModel.exitWorkspacePicker()
+                        configuringWorkspace = workspace
+                    },
+                    onClosePicker = {
                         viewModel.exitWorkspacePicker()
                     }
-                },
-                onConfigureWhitelist = { workspace ->
-                    viewModel.exitWorkspacePicker()
-                    configuringWorkspace = workspace
-                },
-                onClosePicker = {
-                    viewModel.exitWorkspacePicker()
-                }
-            )
-        } else {
-            if (activeWorkspaceId == null) {
-                DefaultDummyHomeScreen(
-                    onOpenConfiguration = launchWorkspaceManager,
-                    modifier = Modifier.fillMaxSize()
                 )
             } else {
-                AnimatedVisibility(
-                    visible = true,
-                    enter = scaleIn(initialScale = 0.5f, animationSpec = tween(500)) + fadeIn(animationSpec = tween(500)),
-                    exit = scaleOut(targetScale = 0.5f, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300)),
-                    modifier = Modifier.fillMaxSize()
-                ) {
+                if (activeWorkspaceId == null) {
+                    DefaultDummyHomeScreen(
+                        onOpenConfiguration = launchWorkspaceManager,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
                     WorkspaceGridHome(
                         workspaceId = activeWorkspace?.id,
                         workspaceName = activeWorkspace?.name,
