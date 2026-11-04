@@ -56,6 +56,7 @@ import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.domain.model.AppInfo
+import com.example.workinyourspace.presentation.WallpaperCropScreen
 import com.example.workinyourspace.presentation.WorkspaceViewModel
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -111,6 +112,21 @@ fun WorkspaceGridHome(
     var showAssistiveMenu by remember { mutableStateOf(false) }
     var pendingDeleteApp by remember { mutableStateOf<WhitelistedApp?>(null) }
 
+    // Wallpaper Crop & Zoom State
+    var croppingImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    croppingImageUri?.let { uri ->
+        if (workspaceId != null) {
+            WallpaperCropScreen(
+                workspaceId = workspaceId,
+                imageUri = uri,
+                viewModel = viewModel,
+                onComplete = { croppingImageUri = null }
+            )
+            return
+        }
+    }
+
     // Wallpaper Zoom/Adjust State
     var pendingWallpaperUri by remember { mutableStateOf<String?>(null) }
     var wallpaperScale by remember { mutableFloatStateOf(1.0f) }
@@ -119,9 +135,8 @@ fun WorkspaceGridHome(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            if (workspaceId != null) {
-                viewModel.saveWorkspaceWallpaper(context, workspaceId, it)
-            }
+            croppingImageUri = it
+            showWallpaperSheet = false
         }
     }
 
@@ -222,20 +237,6 @@ fun WorkspaceGridHome(
                 .statusBarsPadding()
                 .padding(top = 16.dp, bottom = 80.dp)
                 .verticalScroll(scrollState)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            isLongPressingCanvas = true
-                            tryAwaitRelease()
-                            isLongPressingCanvas = false
-                        },
-                        onLongPress = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            isLongPressingCanvas = false
-                            onOpenWorkspacePicker()
-                        }
-                    )
-                }
         ) {
             placedApps.forEach { whitelistedApp ->
                 val appInfo = appMap[whitelistedApp.packageName]
@@ -498,8 +499,8 @@ fun WorkspaceGridHome(
                             Text("📱", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Whitelisted App Drawer", style = MaterialTheme.typography.titleMedium)
-                                Text("Add or drag apps to home screen", style = MaterialTheme.typography.bodySmall)
+                                Text("Workspace App Drawer", style = MaterialTheme.typography.titleMedium)
+                                Text("Add whitelisted apps to home screen", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -512,7 +513,7 @@ fun WorkspaceGridHome(
                             showWallpaperSheet = true
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -524,8 +525,8 @@ fun WorkspaceGridHome(
                             Text("🖼️", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Change Wallpaper", style = MaterialTheme.typography.titleMedium)
-                                Text("Select gradient preset or gallery photo", style = MaterialTheme.typography.bodySmall)
+                                Text("Workspace Wallpaper", style = MaterialTheme.typography.titleMedium)
+                                Text("Pick custom gallery image or gradient theme", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -539,7 +540,7 @@ fun WorkspaceGridHome(
             }
         }
 
-        // Change Wallpaper Sheet
+        // Wallpaper Picker & Presets Sheet
         if (showWallpaperSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showWallpaperSheet = false }
@@ -550,28 +551,25 @@ fun WorkspaceGridHome(
                         .padding(20.dp)
                 ) {
                     Text(
-                        text = "Change Workspace Background",
+                        text = "Workspace Wallpaper",
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
                     Button(
-                        onClick = {
-                            galleryLauncher.launch("image/*")
-                            showWallpaperSheet = false
-                        },
+                        onClick = { galleryLauncher.launch("image/*") },
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .height(52.dp)
                     ) {
-                        Text("🖼️ Choose Photo from Gallery", fontSize = 16.sp)
+                        Text("📷 Pick Image from Gallery")
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Text(
-                        text = "Preset Color Themes",
+                        text = "Color & Gradient Presets",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
@@ -581,7 +579,7 @@ fun WorkspaceGridHome(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(DEFAULT_WALLPAPER_PRESETS) { preset ->
-                            Card(
+                            Surface(
                                 onClick = {
                                     if (workspaceId != null) {
                                         viewModel.updateWorkspaceWallpaper(workspaceId, preset.id)
@@ -589,113 +587,62 @@ fun WorkspaceGridHome(
                                     showWallpaperSheet = false
                                 },
                                 shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier
-                                    .size(width = 100.dp, height = 120.dp)
+                                color = preset.previewColors.first(),
+                                border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.6f)),
+                                modifier = Modifier.size(80.dp, 100.dp)
                             ) {
                                 Box(
+                                    contentAlignment = Alignment.BottomCenter,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(Brush.verticalGradient(colors = preset.previewColors)),
-                                    contentAlignment = Alignment.Center
+                                        .background(
+                                            Brush.verticalGradient(preset.previewColors)
+                                        )
+                                        .padding(6.dp)
                                 ) {
                                     Text(
                                         text = preset.name,
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = Color.White,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(8.dp)
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
 
-        // Wallpaper Zoom / Adjust Dialog
-        pendingWallpaperUri?.let { uri ->
-            AlertDialog(
-                onDismissRequest = { pendingWallpaperUri = null },
-                title = { Text("Adjust Wallpaper Zoom") },
-                text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 200.dp, height = 260.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.Black)
-                        ) {
-                            AsyncImage(
-                                model = uri,
-                                contentDescription = "Wallpaper Preview",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer {
-                                        scaleX = wallpaperScale
-                                        scaleY = wallpaperScale
-                                    },
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "Zoom: ${(wallpaperScale * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
-                        Slider(
-                            value = wallpaperScale,
-                            onValueChange = { wallpaperScale = it },
-                            valueRange = 1.0f..2.5f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (workspaceId != null) {
-                                viewModel.updateWorkspaceWallpaper(workspaceId, uri)
-                            }
-                            pendingWallpaperUri = null
-                        }
-                    ) {
-                        Text("Set Wallpaper")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingWallpaperUri = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        // Delete App Confirmation Dialog
+        // Confirm Shortcut Delete Dialog
         pendingDeleteApp?.let { app ->
-            val appInfo = appMap[app.packageName]
-            val name = appInfo?.name ?: app.packageName.substringAfterLast('.')
-            AlertDialog(
-                onDismissRequest = { pendingDeleteApp = null },
-                title = { Text("Remove App Shortcut") },
-                text = { Text("Are you sure you want to remove '$name' from this home screen?") },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            onRemoveFromHomeScreen(app)
-                            pendingDeleteApp = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Remove")
+            let {
+                val appInfo = appMap[app.packageName]
+                val displayName = appInfo?.name ?: app.packageName.substringAfterLast('.')
+
+                AlertDialog(
+                    onDismissRequest = { pendingDeleteApp = null },
+                    title = { Text("Remove Shortcut?") },
+                    text = { Text("Remove '$displayName' from home screen? It will remain available in your workspace App Drawer.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                onRemoveFromHomeScreen(app)
+                                pendingDeleteApp = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Remove")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingDeleteApp = null }) {
+                            Text("Cancel")
+                        }
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingDeleteApp = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
+                )
+            }
         }
     }
 }
@@ -703,92 +650,29 @@ fun WorkspaceGridHome(
 @Composable
 fun WorkspaceWallpaper(
     wallpaperUri: String?,
-    scale: Float = 1.0f,
-    modifier: Modifier = Modifier
+    scale: Float = 1.0f
 ) {
-    when {
-        wallpaperUri.isNullOrEmpty() -> {
+    if (!wallpaperUri.isNullOrEmpty()) {
+        if (wallpaperUri.startsWith("preset://")) {
+            val presetId = wallpaperUri.removePrefix("preset://")
+            val preset = DEFAULT_WALLPAPER_PRESETS.find { it.id == wallpaperUri } ?: DEFAULT_WALLPAPER_PRESETS.first()
+
             Box(
-                modifier = modifier
+                modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
                     .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF1E2A38), Color(0xFF111823))
-                        )
+                        Brush.verticalGradient(preset.previewColors)
                     )
             )
-        }
-        wallpaperUri == "preset://midnight_navy" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF1E2A38), Color(0xFF111823))
-                        )
-                    )
-            )
-        }
-        wallpaperUri == "preset://dark_minimal" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF1E1E2C), Color(0xFF0F0F1A))
-                        )
-                    )
-            )
-        }
-        wallpaperUri == "preset://gym_red" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF3A0007), Color(0xFF0D0002))
-                        )
-                    )
-            )
-        }
-        wallpaperUri == "preset://ocean_blue" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF001F3F), Color(0xFF000814))
-                        )
-                    )
-            )
-        }
-        wallpaperUri == "preset://calm_green" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF0B2B1A), Color(0xFF030E08))
-                        )
-                    )
-            )
-        }
-        wallpaperUri == "preset://sunset_purple" -> {
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xFF2B0B2B), Color(0xFF0E030E))
-                        )
-                    )
-            )
-        }
-        else -> {
+        } else {
             AsyncImage(
                 model = wallpaperUri,
-                contentDescription = "Workspace Wallpaper",
-                modifier = modifier
+                contentDescription = "Workspace Custom Wallpaper",
+                modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
                         scaleX = scale
@@ -797,34 +681,39 @@ fun WorkspaceWallpaper(
                 contentScale = ContentScale.Crop
             )
         }
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF181A20))
+        )
     }
 }
 
 fun findNearestEmptyCell(
     targetCol: Int,
     targetRow: Int,
-    cols: Int,
-    rows: Int,
-    occupiedCells: Set<GridCell>
+    maxCols: Int,
+    maxRows: Int,
+    occupied: Set<GridCell>
 ): GridCell {
-    if (GridCell(targetCol, targetRow) !in occupiedCells) {
+    if (GridCell(targetCol, targetRow) !in occupied) {
         return GridCell(targetCol, targetRow)
     }
 
-    var bestCell = GridCell(targetCol, targetRow)
-    var minDistance = Float.MAX_VALUE
-
-    for (r in 0 until rows) {
-        for (c in 0 until cols) {
-            val cell = GridCell(c, r)
-            if (cell !in occupiedCells) {
-                val dist = (c - targetCol) * (c - targetCol) + (r - targetRow) * (r - targetRow)
-                if (dist.toFloat() < minDistance) {
-                    minDistance = dist.toFloat()
-                    bestCell = cell
+    var radius = 1
+    while (radius < maxOf(maxCols, maxRows)) {
+        for (r in targetRow - radius..targetRow + radius) {
+            for (c in targetCol - radius..targetCol + radius) {
+                if (c in 0 until maxCols && r in 0 until maxRows) {
+                    val candidate = GridCell(c, r)
+                    if (candidate !in occupied) {
+                        return candidate
+                    }
                 }
             }
         }
+        radius++
     }
-    return bestCell
+    return GridCell(targetCol, targetRow)
 }
