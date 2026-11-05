@@ -1,9 +1,13 @@
 package com.example.workinyourspace.presentation
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -40,6 +44,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.Workspace
+import com.example.workinyourspace.data.local.entity.WorkspaceWidget
 import com.example.workinyourspace.domain.model.AppInfo
 import com.example.workinyourspace.presentation.components.GridCell
 import com.example.workinyourspace.presentation.components.PermissionsPrompt
@@ -52,6 +57,8 @@ import kotlin.math.roundToInt
 @Composable
 fun MainLauncherScreen(
     viewModel: WorkspaceViewModel,
+    appWidgetHost: AppWidgetHost? = null,
+    appWidgetManager: AppWidgetManager? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -64,6 +71,7 @@ fun MainLauncherScreen(
 
     var configuringWorkspace by remember { mutableStateOf<Workspace?>(null) }
     var showAppDrawer by remember { mutableStateOf(false) }
+    var pendingWidgetId by remember { mutableIntStateOf(-1) }
 
     val selectedPackageNames = remember { mutableStateListOf<String>() }
 
@@ -81,6 +89,85 @@ fun MainLauncherScreen(
 
     val launchWorkspaceManager = {
         context.startActivity(Intent(context, WorkspaceManagerActivity::class.java))
+    }
+
+    // Widget Configure Launcher
+    val widgetConfigureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null) {
+            val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId) ?: pendingWidgetId
+            if (widgetId != -1 && appWidgetManager != null) {
+                val info = appWidgetManager.getAppWidgetInfo(widgetId)
+                if (info != null) {
+                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
+                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    viewModel.addWidget(
+                        WorkspaceWidget(
+                            workspaceId = activeWorkspaceId!!,
+                            appWidgetId = widgetId,
+                            providerPackage = info.provider.packageName,
+                            providerClass = info.provider.className,
+                            x = 20f,
+                            y = 40f,
+                            spanX = spanX,
+                            spanY = spanY
+                        )
+                    )
+                }
+            }
+        } else if (pendingWidgetId != -1 && appWidgetHost != null) {
+            appWidgetHost.deleteAppWidgetId(pendingWidgetId)
+        }
+        pendingWidgetId = -1
+    }
+
+    // Widget Pick Launcher
+    val widgetPickLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null && appWidgetManager != null) {
+            val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
+            if (widgetId != -1) {
+                val info = appWidgetManager.getAppWidgetInfo(widgetId)
+                if (info?.configure != null) {
+                    pendingWidgetId = widgetId
+                    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                        component = info.configure
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                    }
+                    widgetConfigureLauncher.launch(intent)
+                } else if (info != null) {
+                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
+                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    viewModel.addWidget(
+                        WorkspaceWidget(
+                            workspaceId = activeWorkspaceId!!,
+                            appWidgetId = widgetId,
+                            providerPackage = info.provider.packageName,
+                            providerClass = info.provider.className,
+                            x = 20f,
+                            y = 40f,
+                            spanX = spanX,
+                            spanY = spanY
+                        )
+                    )
+                }
+            }
+        } else if (pendingWidgetId != -1 && appWidgetHost != null) {
+            appWidgetHost.deleteAppWidgetId(pendingWidgetId)
+            pendingWidgetId = -1
+        }
+    }
+
+    val onAddSystemWidget = {
+        if (appWidgetHost != null && activeWorkspaceId != null) {
+            val newWidgetId = appWidgetHost.allocateAppWidgetId()
+            val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, newWidgetId)
+            }
+            widgetPickLauncher.launch(pickIntent)
+        }
     }
 
     configuringWorkspace?.let { workspace ->
@@ -111,11 +198,9 @@ fun MainLauncherScreen(
             targetState = isSelectingWorkspace,
             transitionSpec = {
                 if (targetState) {
-                    // Zoom Out into Carousel
                     (scaleIn(initialScale = 1.15f, animationSpec = tween(400)) + fadeIn(tween(400)))
                         .togetherWith(scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(tween(400)))
                 } else {
-                    // Zoom In into Active Workspace Home Screen
                     (scaleIn(initialScale = 0.8f, animationSpec = tween(400)) + fadeIn(tween(400)))
                         .togetherWith(scaleOut(targetScale = 1.15f, animationSpec = tween(400)) + fadeOut(tween(400)))
                 }
@@ -158,6 +243,9 @@ fun MainLauncherScreen(
                         whitelistedApps = activeWhitelistedApps,
                         installedApps = installedApps,
                         viewModel = viewModel,
+                        appWidgetHost = appWidgetHost,
+                        appWidgetManager = appWidgetManager,
+                        onAddSystemWidget = onAddSystemWidget,
                         onOpenWorkspacePicker = {
                             viewModel.enterWorkspacePicker()
                         },
@@ -351,7 +439,6 @@ fun MainLauncherScreen(
                                             targetPos.x,
                                             targetPos.y
                                         )
-                                        // Update simulated placed list for sequential placement
                                         currentPlaced = currentPlaced + WhitelistedApp(
                                             workspaceId = activeWorkspaceId!!,
                                             packageName = pkg,
