@@ -1,9 +1,6 @@
 package com.example.workinyourspace.presentation
 
 import android.content.Context
-import android.net.Uri
-import java.io.File
-import java.io.FileOutputStream
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
@@ -136,28 +133,6 @@ class WorkspaceViewModel @Inject constructor(
         }
     }
 
-    fun saveWorkspaceWallpaper(context: Context, workspaceId: Int, contentUri: Uri) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val wallpapersDir = File(context.filesDir, "wallpapers").apply { if (!exists()) mkdirs() }
-                wallpapersDir.listFiles()?.filter { it.name.startsWith("workspace_wallpaper_${workspaceId}_") }?.forEach { it.delete() }
-
-                val destFile = File(wallpapersDir, "workspace_wallpaper_${workspaceId}_${System.currentTimeMillis()}.jpg")
-                context.contentResolver.openInputStream(contentUri)?.use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                val savedFileUri = Uri.fromFile(destFile).toString()
-                workspaceRepo.updateWorkspaceWallpaper(workspaceId, savedFileUri)
-                Log.d("WallpaperSave", "Saved permanent wallpaper: $savedFileUri")
-            } catch (e: Exception) {
-                Log.e("WallpaperSave", "Failed to save permanent wallpaper", e)
-            }
-        }
-    }
-
     fun addWhitelistedApp(workspaceId: Int, packageName: String, x: Float, y: Float, customIntent: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val app = WhitelistedApp(
@@ -248,16 +223,15 @@ class WorkspaceViewModel @Inject constructor(
 
                     var cellIndex = 0
                     val cols = 4
-                    val cellW = 180f
-                    val cellH = 220f
-
+                    // Strictly non-overlapping grid positions: distinct columns (0..3) and rows (0, 1, 2)
                     installedPackageNames.forEach { pkg ->
                         if (defaultPackages.any { pkg.contains(it) || it.contains(pkg) } || cellIndex < 4) {
                             if (cellIndex < 8) {
                                 val c = cellIndex % cols
                                 val r = cellIndex / cols
-                                val x = c * cellW + 20f
-                                val y = r * cellH + 40f
+                                // Assign standardized grid offset coordinates
+                                val x = c * 180f + 16f
+                                val y = r * 200f + 20f
                                 workspaceRepo.addWhitelistedApp(
                                     WhitelistedApp(
                                         workspaceId = homeWs.id,
