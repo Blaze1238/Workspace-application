@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -91,6 +92,9 @@ fun MainLauncherScreen(
         context.startActivity(Intent(context, WorkspaceManagerActivity::class.java))
     }
 
+    var pendingInitX by remember { mutableFloatStateOf(20f) }
+    var pendingInitY by remember { mutableFloatStateOf(40f) }
+
     // Widget Configure Launcher
     val widgetConfigureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -108,8 +112,8 @@ fun MainLauncherScreen(
                             appWidgetId = widgetId,
                             providerPackage = info.provider.packageName,
                             providerClass = info.provider.className,
-                            x = 20f,
-                            y = 40f,
+                            x = pendingInitX,
+                            y = pendingInitY,
                             spanX = spanX,
                             spanY = spanY
                         )
@@ -122,22 +126,24 @@ fun MainLauncherScreen(
         pendingWidgetId = -1
     }
 
-    // Widget Pick Launcher
-    val widgetPickLauncher = rememberLauncherForActivityResult(
+    var pendingBindWidgetId by remember { mutableIntStateOf(-1) }
+
+    // Widget Bind Launcher (ACTION_APPWIDGET_BIND)
+    val widgetBindLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null && appWidgetManager != null) {
-            val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
-            if (widgetId != -1) {
-                val info = appWidgetManager.getAppWidgetInfo(widgetId)
-                if (info?.configure != null) {
+        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null && pendingBindWidgetId != -1 && appWidgetManager != null) {
+            val widgetId = pendingBindWidgetId
+            val info = appWidgetManager.getAppWidgetInfo(widgetId)
+            if (info != null) {
+                if (info.configure != null) {
                     pendingWidgetId = widgetId
                     val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
                         component = info.configure
                         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                     }
                     widgetConfigureLauncher.launch(intent)
-                } else if (info != null) {
+                } else {
                     val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
                     val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
                     viewModel.addWidget(
@@ -146,27 +152,58 @@ fun MainLauncherScreen(
                             appWidgetId = widgetId,
                             providerPackage = info.provider.packageName,
                             providerClass = info.provider.className,
-                            x = 20f,
-                            y = 40f,
+                            x = pendingInitX,
+                            y = pendingInitY,
                             spanX = spanX,
                             spanY = spanY
                         )
                     )
                 }
             }
-        } else if (pendingWidgetId != -1 && appWidgetHost != null) {
-            appWidgetHost.deleteAppWidgetId(pendingWidgetId)
-            pendingWidgetId = -1
+        } else if (pendingBindWidgetId != -1 && appWidgetHost != null) {
+            appWidgetHost.deleteAppWidgetId(pendingBindWidgetId)
         }
+        pendingBindWidgetId = -1
     }
 
-    val onAddSystemWidget = {
-        if (appWidgetHost != null && activeWorkspaceId != null) {
-            val newWidgetId = appWidgetHost.allocateAppWidgetId()
-            val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, newWidgetId)
+    val onAddSystemWidget: (AppWidgetProviderInfo, Float, Float) -> Unit = { info, initX, initY ->
+        pendingInitX = initX
+        pendingInitY = initY
+        if (appWidgetHost != null && activeWorkspaceId != null && appWidgetManager != null) {
+            val widgetId = appWidgetHost.allocateAppWidgetId()
+            val bound = appWidgetManager.bindAppWidgetIdIfAllowed(widgetId, info.provider)
+            if (!bound) {
+                pendingBindWidgetId = widgetId
+                val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                }
+                widgetBindLauncher.launch(intent)
+            } else {
+                if (info.configure != null) {
+                    pendingWidgetId = widgetId
+                    val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                        component = info.configure
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                    }
+                    widgetConfigureLauncher.launch(intent)
+                } else {
+                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
+                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    viewModel.addWidget(
+                        WorkspaceWidget(
+                            workspaceId = activeWorkspaceId!!,
+                            appWidgetId = widgetId,
+                            providerPackage = info.provider.packageName,
+                            providerClass = info.provider.className,
+                            x = initX,
+                            y = initY,
+                            spanX = spanX,
+                            spanY = spanY
+                        )
+                    )
+                }
             }
-            widgetPickLauncher.launch(pickIntent)
         }
     }
 

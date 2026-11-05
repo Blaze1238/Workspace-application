@@ -1,25 +1,22 @@
 package com.example.workinyourspace.presentation.components
 
-import android.app.Activity
-import android.appwidget.AppWidgetHost
-import android.appwidget.AppWidgetManager
-import android.appwidget.AppWidgetProviderInfo
-import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -29,12 +26,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,31 +51,31 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.flowOf
 import com.example.workinyourspace.data.local.entity.WhitelistedApp
 import com.example.workinyourspace.data.local.entity.WorkspaceWidget
 import com.example.workinyourspace.domain.model.AppInfo
 import com.example.workinyourspace.presentation.WallpaperCropScreen
+import com.example.workinyourspace.presentation.WidgetSelectionScreen
 import com.example.workinyourspace.presentation.WorkspaceViewModel
-import kotlinx.coroutines.flow.flowOf
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -103,7 +105,8 @@ fun WorkspaceGridHome(
     viewModel: WorkspaceViewModel,
     appWidgetHost: AppWidgetHost? = null,
     appWidgetManager: AppWidgetManager? = null,
-    onAddSystemWidget: () -> Unit = {},
+    onAddSystemWidget: (AppWidgetProviderInfo, Float, Float) -> Unit = { _, _, _ -> },
+    onOpenWidgetScreen: () -> Unit = {},
     onOpenWorkspacePicker: () -> Unit,
     onOpenConfiguration: () -> Unit,
     onRemoveFromHomeScreen: (WhitelistedApp) -> Unit,
@@ -113,14 +116,6 @@ fun WorkspaceGridHome(
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    val appMap = remember(installedApps) {
-        installedApps.associateBy { it.packageName }
-    }
-
-    val placedApps = remember(whitelistedApps) {
-        whitelistedApps.filter { it.position.x >= 0f && it.position.y >= 0f }
-    }
-
     val workspaceWidgets by remember(workspaceId) {
         if (workspaceId != null) {
             viewModel.getWorkspaceWidgets(workspaceId)
@@ -129,12 +124,25 @@ fun WorkspaceGridHome(
         }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val appMap = remember(installedApps) {
+        installedApps.associateBy { it.packageName }
+    }
+
+    val placedApps = remember(whitelistedApps) {
+        whitelistedApps.filter { it.position.x >= 0f && it.position.y >= 0f }
+    }
+
+    var activeDraggingApp by remember { mutableStateOf<WhitelistedApp?>(null) }
+    var activeDraggingWidget by remember { mutableStateOf<WorkspaceWidget?>(null) }
+    var isHoveringTrash by remember { mutableStateOf(false) }
+
     // Dialog & Sheet States
     var showWallpaperSheet by remember { mutableStateOf(false) }
     var showAssistiveMenu by remember { mutableStateOf(false) }
-    var showFuntouchWidgetSheet by remember { mutableStateOf(false) }
-    var pendingDeleteApp by remember { mutableStateOf<WhitelistedApp?>(null) }
+    var showWorkspaceEditMenu by remember { mutableStateOf(false) }
+    var showWidgetSelectionScreen by remember { mutableStateOf(false) }
     var selectedWidgetForAction by remember { mutableStateOf<WorkspaceWidget?>(null) }
+    var pendingDeleteApp by remember { mutableStateOf<WhitelistedApp?>(null) }
 
     // Wallpaper Crop & Zoom State
     var croppingImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -173,35 +181,19 @@ fun WorkspaceGridHome(
         }
     }
 
-    val haptic = LocalHapticFeedback.current
-
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF181A20))
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onLongPress = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onOpenWorkspacePicker()
-                    }
-                )
-            }
             .nestedScroll(nestedScrollConnection)
     ) {
         val canvasWidthPx = with(density) { maxWidth.toPx() }
         val canvasHeightPx = with(density) { maxHeight.toPx() }
 
-        // Default AssistiveTouch position to Top Right
         var assistiveTouchOffset by remember { mutableStateOf(Offset(canvasWidthPx - with(density) { 72.dp.toPx() }, 100f)) }
 
         val gridCols = 4
-        val maxPlacedRow = remember(placedApps, workspaceWidgets) {
-            val appMax = placedApps.maxOfOrNull { ((it.position.y + 50f) / (canvasHeightPx / 6f)).toInt() } ?: 5
-            val widgetMax = workspaceWidgets.maxOfOrNull { ((it.y + 50f) / (canvasHeightPx / 6f)).toInt() + it.spanY } ?: 5
-            max(appMax, widgetMax)
-        }
-        val gridRows = max(6, maxPlacedRow + 2)
+        val maxVisibleRows = 6
 
         val cellWidthPx = canvasWidthPx / gridCols.toFloat()
         val cellHeightPx = (canvasHeightPx - with(density) { 140.dp.toPx() }) / 6f
@@ -209,235 +201,474 @@ fun WorkspaceGridHome(
         val iconWidthPx = with(density) { 72.dp.toPx() }
         val iconHeightPx = with(density) { 72.dp.toPx() }
 
-        val scrollState = rememberScrollState()
-
-        // Background Wallpaper Canvas
-        Box(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            WorkspaceWallpaper(
-                wallpaperUri = wallpaperUri,
-                scale = wallpaperScale
+        if (showWidgetSelectionScreen && appWidgetManager != null && workspaceId != null) {
+            WidgetSelectionScreen(
+                workspaceId = workspaceId,
+                workspaceWidgets = workspaceWidgets,
+                placedApps = placedApps,
+                gridCols = gridCols,
+                gridRows = maxVisibleRows,
+                cellWidthPx = cellWidthPx,
+                cellHeightPx = cellHeightPx,
+                appWidgetManager = appWidgetManager,
+                viewModel = viewModel,
+                onBackClick = { showWidgetSelectionScreen = false },
+                onAddSystemWidget = { providerInfo, initX, initY ->
+                    showWidgetSelectionScreen = false
+                    onAddSystemWidget(providerInfo, initX, initY)
+                },
+                modifier = Modifier.fillMaxSize()
             )
+            return@BoxWithConstraints
         }
 
-        // Top Status Bar Protection Overlay
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
-                    )
-                )
-                .statusBarsPadding()
+        val scrollState = rememberScrollState()
+
+        val haptic = LocalHapticFeedback.current
+        var isLongPressingCanvas by remember { mutableStateOf(false) }
+        val canvasScale by animateFloatAsState(
+            targetValue = if (isLongPressingCanvas) 0.96f else 1.0f,
+            animationSpec = tween(150),
+            label = "CanvasLongPressScale"
         )
 
-        // Multi-Row Vertical Scrolling Grid Canvas
+        val smoothCanvasScale by animateFloatAsState(
+            targetValue = if (showWorkspaceEditMenu) 0.82f else canvasScale,
+            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            label = "SmoothCanvasScale"
+        )
+
+        // Unified Scaling Canvas (Wallpaper + Status Bar + Grid Canvas + Apps + Widgets Scale Smoothly Together)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(top = 16.dp, bottom = 80.dp)
-                .verticalScroll(scrollState)
+                .graphicsLayer {
+                    scaleX = smoothCanvasScale
+                    scaleY = smoothCanvasScale
+                }
         ) {
-            // Render Placed Smoothly Movable Widgets
-            workspaceWidgets.forEach { widget ->
-                var widgetX by remember(widget.id, widget.x) { mutableFloatStateOf(widget.x) }
-                var widgetY by remember(widget.id, widget.y) { mutableFloatStateOf(widget.y) }
-                var isWidgetDragging by remember { mutableStateOf(false) }
+            // Background Wallpaper Box
+            Box(modifier = Modifier.fillMaxSize()) {
+                WorkspaceWallpaper(
+                    wallpaperUri = wallpaperUri,
+                    scale = wallpaperScale
+                )
+            }
 
-                val wWidthPx = widget.spanX * cellWidthPx - 16f
-                val wHeightPx = widget.spanY * cellHeightPx - 16f
-
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(widgetX.roundToInt(), widgetY.roundToInt()) }
-                        .size(with(density) { wWidthPx.toDp() }, with(density) { wHeightPx.toDp() })
-                        .graphicsLayer { alpha = if (isWidgetDragging) 0.7f else 1.0f }
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.DarkGray.copy(alpha = 0.5f))
-                        .pointerInput(widget.id) {
-                            detectDragGestures(
-                                onDragStart = { isWidgetDragging = true },
-                                onDragEnd = {
-                                    isWidgetDragging = false
-                                    val rawCol = ((widgetX + cellWidthPx / 2f) / cellWidthPx).toInt().coerceIn(0, gridCols - widget.spanX)
-                                    val rawRow = ((widgetY + cellHeightPx / 2f) / cellHeightPx).toInt().coerceIn(0, gridRows - widget.spanY)
-
-                                    val snappedX = rawCol * cellWidthPx + 8f
-                                    val snappedY = rawRow * cellHeightPx + 8f
-
-                                    widgetX = snappedX
-                                    widgetY = snappedY
-
-                                    if (workspaceId != null) {
-                                        viewModel.updateWidgetPosition(widget.id, snappedX, snappedY)
-                                    }
-                                },
-                                onDragCancel = { isWidgetDragging = false }
-                            ) { change, dragAmount ->
-                                change.consume()
-                                widgetX += dragAmount.x
-                                widgetY += dragAmount.y
-                            }
-                        }
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                selectedWidgetForAction = widget
-                            }
+            // Top Status Bar Protection Overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)
                         )
-                ) {
-                    if (appWidgetHost != null && appWidgetManager != null) {
-                        AndroidView(
-                            factory = { ctx ->
-                                val info = appWidgetManager.getAppWidgetInfo(widget.appWidgetId)
-                                if (info != null) {
-                                    appWidgetHost.createView(ctx, widget.appWidgetId, info).apply {
-                                        setAppWidget(widget.appWidgetId, info)
-                                    }
+                    )
+                    .statusBarsPadding()
+            )
+
+            // Multi-Row Vertical Scrolling Grid Canvas
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(top = 16.dp, bottom = 80.dp)
+                    .verticalScroll(scrollState)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                if (showWorkspaceEditMenu) {
+                                    showWorkspaceEditMenu = false
                                 } else {
-                                    android.view.View(ctx)
+                                    isLongPressingCanvas = true
+                                    tryAwaitRelease()
+                                    isLongPressingCanvas = false
                                 }
                             },
-                            modifier = Modifier.fillMaxSize()
+                            onLongPress = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isLongPressingCanvas = false
+                                showWorkspaceEditMenu = true
+                            }
                         )
-                    } else {
-                        Box(
-                            contentAlignment = Alignment.Center,
+                    }
+            ) {
+                // Render Placed Widgets with Strict 4x6 Grid Boundary Validation & Revert on Collision
+                workspaceWidgets.forEach { widget ->
+                    var widgetX by remember(widget.id, widget.x) { mutableFloatStateOf(widget.x) }
+                    var widgetY by remember(widget.id, widget.y) { mutableFloatStateOf(widget.y) }
+                    var isWidgetDragging by remember { mutableStateOf(false) }
+
+                    val wWidthPx = widget.spanX * cellWidthPx - 16f
+                    val wHeightPx = widget.spanY * cellHeightPx - 16f
+
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(widgetX.roundToInt(), widgetY.roundToInt()) }
+                            .size(with(density) { wWidthPx.toDp() }, with(density) { wHeightPx.toDp() })
+                            .graphicsLayer { alpha = if (isWidgetDragging) 0.7f else 1.0f }
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.DarkGray.copy(alpha = 0.5f))
+                            .pointerInput(widget.id, widget.x, widget.y) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        activeDraggingWidget = widget
+                                        isWidgetDragging = true
+                                    },
+                                    onDragEnd = {
+                                        isWidgetDragging = false
+                                        if (isHoveringTrash) {
+                                            viewModel.deleteWidgetById(widget.id)
+                                            appWidgetHost?.deleteAppWidgetId(widget.appWidgetId)
+                                        } else {
+                                            val rawCol = (widgetX / cellWidthPx).roundToInt().coerceIn(0, gridCols - widget.spanX)
+                                            val rawRow = (widgetY / cellHeightPx).roundToInt().coerceIn(0, maxVisibleRows - widget.spanY)
+
+                                            val occupied = mutableSetOf<GridCell>()
+                                            placedApps.forEach { app ->
+                                                val c = (app.position.x / cellWidthPx).roundToInt()
+                                                val r = (app.position.y / cellHeightPx).roundToInt()
+                                                if (c in 0 until gridCols && r in 0 until maxVisibleRows) {
+                                                    occupied.add(GridCell(c, r))
+                                                }
+                                            }
+                                            workspaceWidgets.filter { it.id != widget.id }.forEach { w ->
+                                                val startCol = (w.x / cellWidthPx).roundToInt()
+                                                val startRow = (w.y / cellHeightPx).roundToInt()
+                                                for (dx in 0 until w.spanX) {
+                                                    for (dy in 0 until w.spanY) {
+                                                        val c = startCol + dx
+                                                        val r = startRow + dy
+                                                        if (c in 0 until gridCols && r in 0 until maxVisibleRows) {
+                                                            occupied.add(GridCell(c, r))
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (canFitRegion(rawCol, rawRow, widget.spanX, widget.spanY, gridCols, maxVisibleRows, occupied)) {
+                                                val snappedX = rawCol * cellWidthPx + 8f
+                                                val snappedY = rawRow * cellHeightPx + 8f
+                                                widgetX = snappedX
+                                                widgetY = snappedY
+                                                viewModel.updateWidgetPosition(widget.id, snappedX, snappedY)
+                                            } else {
+                                                widgetX = widget.x
+                                                widgetY = widget.y
+                                                Toast.makeText(context, "Out of bounds or occupied! Reverting position.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        activeDraggingWidget = null
+                                        isHoveringTrash = false
+                                    },
+                                    onDragCancel = {
+                                        isWidgetDragging = false
+                                        widgetX = widget.x
+                                        widgetY = widget.y
+                                        activeDraggingWidget = null
+                                        isHoveringTrash = false
+                                    }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    widgetX += dragAmount.x
+                                    widgetY += dragAmount.y
+                                    val trashCenterX = canvasWidthPx / 2f
+                                    val itemCenterX = widgetX + wWidthPx / 2f
+                                    val itemCenterY = widgetY
+                                    isHoveringTrash = abs(itemCenterX - trashCenterX) < 100f && itemCenterY < 120f
+                                }
+                            }
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    selectedWidgetForAction = widget
+                                }
+                            )
+                    ) {
+                        if (appWidgetHost != null && appWidgetManager != null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    val info = appWidgetManager.getAppWidgetInfo(widget.appWidgetId)
+                                    if (info != null) {
+                                        appWidgetHost.createView(ctx, widget.appWidgetId, info).apply {
+                                            setAppWidget(widget.appWidgetId, info)
+                                        }
+                                    } else {
+                                        android.view.View(ctx)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text(
+                                    text = "🧩 Widget #${widget.appWidgetId} (${widget.spanX}×${widget.spanY})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Render Placed App Shortcuts with Strict Grid Snapping
+                placedApps.forEach { whitelistedApp ->
+                    val appInfo = appMap[whitelistedApp.packageName]
+                    val displayName = appInfo?.name ?: whitelistedApp.packageName.substringAfterLast('.')
+
+                    var offsetX by remember(whitelistedApp.id, whitelistedApp.position.x) { mutableFloatStateOf(whitelistedApp.position.x) }
+                    var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableFloatStateOf(whitelistedApp.position.y) }
+                    var isDragging by remember { mutableStateOf(false) }
+
+                    val bitmap = remember(appInfo?.icon) {
+                        try {
+                            appInfo?.icon?.toBitmap(width = 96, height = 96)?.asImageBitmap()
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                            .size(76.dp)
+                            .graphicsLayer {
+                                alpha = if (isDragging) 0.6f else 1.0f
+                            }
+                            .pointerInput(whitelistedApp.id, whitelistedApp.position.x, whitelistedApp.position.y) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        activeDraggingApp = whitelistedApp
+                                        isDragging = true
+                                    },
+                                    onDragEnd = {
+                                        isDragging = false
+                                        if (isHoveringTrash) {
+                                            pendingDeleteApp = whitelistedApp
+                                        } else {
+                                            val rawCol = (offsetX / cellWidthPx).roundToInt().coerceIn(0, gridCols - 1)
+                                            val rawRow = (offsetY / cellHeightPx).roundToInt().coerceIn(0, maxVisibleRows - 1)
+
+                                            val occupied = mutableSetOf<GridCell>()
+                                            placedApps.filter { it.id != whitelistedApp.id }.forEach { app ->
+                                                val c = (app.position.x / cellWidthPx).roundToInt()
+                                                val r = (app.position.y / cellHeightPx).roundToInt()
+                                                if (c in 0 until gridCols && r in 0 until maxVisibleRows) {
+                                                    occupied.add(GridCell(c, r))
+                                                }
+                                            }
+                                            workspaceWidgets.forEach { w ->
+                                                val startCol = (w.x / cellWidthPx).roundToInt()
+                                                val startRow = (w.y / cellHeightPx).roundToInt()
+                                                for (dx in 0 until w.spanX) {
+                                                    for (dy in 0 until w.spanY) {
+                                                        val c = startCol + dx
+                                                        val r = startRow + dy
+                                                        if (c in 0 until gridCols && r in 0 until maxVisibleRows) {
+                                                            occupied.add(GridCell(c, r))
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            val finalCell = findNearestEmptyCell(rawCol, rawRow, gridCols, maxVisibleRows, occupied)
+                                            val snappedX = finalCell.col * cellWidthPx + (cellWidthPx - iconWidthPx) / 2f
+                                            val snappedY = finalCell.row * cellHeightPx + (cellHeightPx - iconHeightPx) / 2f
+
+                                            offsetX = snappedX
+                                            offsetY = snappedY
+
+                                            if (workspaceId != null) {
+                                                viewModel.updateAppPosition(workspaceId, whitelistedApp.packageName, snappedX, snappedY)
+                                            }
+                                        }
+                                        activeDraggingApp = null
+                                        isHoveringTrash = false
+                                    },
+                                    onDragCancel = {
+                                        isDragging = false
+                                        activeDraggingApp = null
+                                        isHoveringTrash = false
+                                    }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    offsetX += dragAmount.x
+                                    offsetY += dragAmount.y
+                                    val trashCenterX = canvasWidthPx / 2f
+                                    val itemCenterX = offsetX + iconWidthPx / 2f
+                                    val itemCenterY = offsetY
+                                    isHoveringTrash = abs(itemCenterX - trashCenterX) < 100f && itemCenterY < 120f
+                                }
+                            }
+                            .combinedClickable(
+                                onClick = {
+                                    viewModel.launchApp(whitelistedApp.packageName, context)
+                                },
+                                onLongClick = {
+                                    pendingDeleteApp = whitelistedApp
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
                             modifier = Modifier.fillMaxSize()
                         ) {
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = displayName,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = displayName.take(1).uppercase(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "🧩 Widget #${widget.appWidgetId} (${widget.spanX}×${widget.spanY})",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color.White
+                                text = displayName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
                 }
             }
+        }
 
-            // Render Placed App Shortcuts
-            placedApps.forEach { whitelistedApp ->
-                val appInfo = appMap[whitelistedApp.packageName]
-                val displayName = appInfo?.name ?: whitelistedApp.packageName.substringAfterLast('.')
-
-                var offsetX by remember(whitelistedApp.id, whitelistedApp.position.x) { mutableFloatStateOf(whitelistedApp.position.x) }
-                var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableFloatStateOf(whitelistedApp.position.y) }
-                var isDragging by remember { mutableStateOf(false) }
-
-                val bitmap = remember(appInfo?.icon) {
-                    try {
-                        appInfo?.icon?.toBitmap(width = 96, height = 96)?.asImageBitmap()
-                    } catch (e: Exception) {
-                        null
+        // Workspace Edit Menu Overlay (Appears on Long Press with Smooth Slide & Scale Animation)
+        AnimatedVisibility(
+            visible = showWorkspaceEditMenu,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+            ) + fadeIn(animationSpec = tween(durationMillis = 350)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(durationMillis = 300)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 32.dp, start = 24.dp, end = 24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Widgets Button Card
+                Surface(
+                    onClick = {
+                        showWorkspaceEditMenu = false
+                        showWidgetSelectionScreen = true
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.Black.copy(alpha = 0.85f),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.3f)),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(72.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Text("🧩", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Widgets", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
-                Box(
+                // Workspaces Button Card
+                Surface(
+                    onClick = {
+                        showWorkspaceEditMenu = false
+                        onOpenWorkspacePicker()
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.Black.copy(alpha = 0.85f),
+                    border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.3f)),
+                    shadowElevation = 8.dp,
                     modifier = Modifier
-                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                        .size(76.dp)
-                        .graphicsLayer {
-                            alpha = if (isDragging) 0.6f else 1.0f
-                        }
-                        .pointerInput(whitelistedApp.id, whitelistedApp.position.x, whitelistedApp.position.y) {
-                            detectDragGestures(
-                                onDragStart = {
-                                    isDragging = true
-                                },
-                                onDragEnd = {
-                                    isDragging = false
-                                    val rawCol = ((offsetX + cellWidthPx / 2f) / cellWidthPx).toInt().coerceIn(0, gridCols - 1)
-                                    val rawRow = ((offsetY + cellHeightPx / 2f) / cellHeightPx).toInt().coerceIn(0, gridRows - 1)
-
-                                    val occupied = placedApps
-                                        .filter { it.id != whitelistedApp.id }
-                                        .map {
-                                            val c = ((it.position.x + cellWidthPx / 2f) / cellWidthPx).toInt().coerceIn(0, gridCols - 1)
-                                            val r = ((it.position.y + cellHeightPx / 2f) / cellHeightPx).toInt().coerceIn(0, gridRows - 1)
-                                            GridCell(c, r)
-                                        }.toMutableSet()
-
-                                    workspaceWidgets.forEach { w ->
-                                        val wCol = ((w.x + cellWidthPx / 2f) / cellWidthPx).toInt().coerceIn(0, gridCols - 1)
-                                        val wRow = ((w.y + cellHeightPx / 2f) / cellHeightPx).toInt().coerceIn(0, gridRows - 1)
-                                        for (r in wRow until (wRow + w.spanY)) {
-                                            for (c in wCol until (wCol + w.spanX)) {
-                                                occupied.add(GridCell(c.coerceIn(0, gridCols - 1), r.coerceIn(0, gridRows - 1)))
-                                            }
-                                        }
-                                    }
-
-                                    val finalCell = findNearestEmptyCell(rawCol, rawRow, gridCols, gridRows, occupied)
-                                    val snappedX = finalCell.col * cellWidthPx + (cellWidthPx - iconWidthPx) / 2f
-                                    val snappedY = finalCell.row * cellHeightPx + (cellHeightPx - iconHeightPx) / 2f
-
-                                    offsetX = snappedX
-                                    offsetY = snappedY
-
-                                    if (workspaceId != null) {
-                                        viewModel.updateAppPosition(workspaceId, whitelistedApp.packageName, snappedX, snappedY)
-                                    }
-                                },
-                                onDragCancel = {
-                                    isDragging = false
-                                }
-                            ) { change, dragAmount ->
-                                change.consume()
-                                offsetX += dragAmount.x
-                                offsetY += dragAmount.y
-                            }
-                        }
-                        .combinedClickable(
-                            onClick = {
-                                viewModel.launchApp(whitelistedApp.packageName, context)
-                            },
-                            onLongClick = {
-                                pendingDeleteApp = whitelistedApp
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .height(72.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxSize()
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp)
                     ) {
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = displayName,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = displayName.take(1).uppercase(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("💼", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Workspaces", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
+                }
+            }
+        }
+
+        // Small Floating Dustbin Icon at Top Center when dragging an app shortcut or widget
+        AnimatedVisibility(
+            visible = activeDraggingApp != null || activeDraggingWidget != null,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 12.dp)
+        ) {
+            val trashBgColor by animateColorAsState(
+                targetValue = if (isHoveringTrash) Color.Red.copy(alpha = 0.95f) else Color.Black.copy(alpha = 0.75f),
+                label = "TrashBgColor"
+            )
+            val trashScale by animateFloatAsState(
+                targetValue = if (isHoveringTrash) 1.25f else 1.0f,
+                label = "TrashScale"
+            )
+
+            Surface(
+                color = trashBgColor,
+                shape = CircleShape,
+                border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.6f)),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .size(52.dp)
+                    .graphicsLayer {
+                        scaleX = trashScale
+                        scaleY = trashScale
+                    }
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Text("🗑️", fontSize = 24.sp)
                 }
             }
         }
@@ -553,10 +784,10 @@ fun WorkspaceGridHome(
                     Surface(
                         onClick = {
                             showAssistiveMenu = false
-                            showFuntouchWidgetSheet = true
+                            showWidgetSelectionScreen = true
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -568,8 +799,8 @@ fun WorkspaceGridHome(
                             Text("🧩", fontSize = 24.sp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Widgets", style = MaterialTheme.typography.titleMedium)
-                                Text("Add clock, weather, calendar, search widgets", style = MaterialTheme.typography.bodySmall)
+                                Text("Add System Widget", style = MaterialTheme.typography.titleMedium)
+                                Text("Add clock, weather, calendar widgets", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -582,7 +813,7 @@ fun WorkspaceGridHome(
                             showWallpaperSheet = true
                         },
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -601,22 +832,11 @@ fun WorkspaceGridHome(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
 
-        // Clubbed App-Based Widget Selector Sheet (Funtouch OS Style Two-Level UI)
-        if (showFuntouchWidgetSheet && appWidgetManager != null && workspaceId != null) {
-            ModalBottomSheet(
-                onDismissRequest = { showFuntouchWidgetSheet = false }
-            ) {
-                ClubbedAppWidgetSelectorSheet(
-                    appWidgetManager = appWidgetManager,
-                    onSelectWidgetProvider = { providerInfo ->
-                        showFuntouchWidgetSheet = false
-                        onAddSystemWidget()
-                    }
-                )
+                    PermissionsPrompt(modifier = Modifier.fillMaxWidth())
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
 
@@ -658,7 +878,7 @@ fun WorkspaceGridHome(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(DEFAULT_WALLPAPER_PRESETS) { preset ->
+                        items(DEFAULT_WALLPAPER_PRESETS, key = { it.id }) { preset ->
                             Surface(
                                 onClick = {
                                     if (workspaceId != null) {
@@ -695,35 +915,37 @@ fun WorkspaceGridHome(
             }
         }
 
-        // Delete App Confirmation Dialog
+        // Confirm Shortcut Delete Dialog
         pendingDeleteApp?.let { app ->
-            val appInfo = appMap[app.packageName]
-            val displayName = appInfo?.name ?: app.packageName.substringAfterLast('.')
+            let {
+                val appInfo = appMap[app.packageName]
+                val displayName = appInfo?.name ?: app.packageName.substringAfterLast('.')
 
-            AlertDialog(
-                onDismissRequest = { pendingDeleteApp = null },
-                title = { Text("Remove Shortcut?") },
-                text = { Text("Remove '$displayName' from home screen? It will remain available in your workspace App Drawer.") },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            onRemoveFromHomeScreen(app)
-                            pendingDeleteApp = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Remove")
+                AlertDialog(
+                    onDismissRequest = { pendingDeleteApp = null },
+                    title = { Text("Remove Shortcut?") },
+                    text = { Text("Remove '$displayName' from home screen? It will remain available in your workspace App Drawer.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                onRemoveFromHomeScreen(app)
+                                pendingDeleteApp = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Remove")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingDeleteApp = null }) {
+                            Text("Cancel")
+                        }
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingDeleteApp = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
+                )
+            }
         }
 
-        // Delete Widget Confirmation Dialog
+        // Confirm Widget Delete Dialog
         selectedWidgetForAction?.let { widget ->
             AlertDialog(
                 onDismissRequest = { selectedWidgetForAction = null },
@@ -747,267 +969,6 @@ fun WorkspaceGridHome(
                     }
                 }
             )
-        }
-    }
-}
-
-data class AppWidgetGroup(
-    val packageName: String,
-    val appLabel: String,
-    val appIcon: android.graphics.drawable.Drawable?,
-    val providers: List<AppWidgetProviderInfo>
-)
-
-@Composable
-fun ClubbedAppWidgetSelectorSheet(
-    appWidgetManager: AppWidgetManager,
-    onSelectWidgetProvider: (AppWidgetProviderInfo) -> Unit
-) {
-    val context = LocalContext.current
-    val pm = context.packageManager
-
-    var selectedAppPackage by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    val installedProviders = remember {
-        try {
-            appWidgetManager.installedProviders
-        } catch (e: Exception) {
-            emptyList<AppWidgetProviderInfo>()
-        }
-    }
-
-    val appGroups = remember(installedProviders) {
-        installedProviders.groupBy { it.provider.packageName }.map { (pkg, providers) ->
-            val first = providers.first()
-            val appLabel = try {
-                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-            } catch (e: Exception) {
-                first.loadLabel(pm).toString()
-            }
-            val appIcon = try {
-                pm.getApplicationIcon(pkg)
-            } catch (e: Exception) {
-                first.loadIcon(context, 0)
-            }
-            AppWidgetGroup(
-                packageName = pkg,
-                appLabel = appLabel,
-                appIcon = appIcon,
-                providers = providers
-            )
-        }.sortedBy { it.appLabel.lowercase() }
-    }
-
-    val filteredGroups = remember(appGroups, searchQuery) {
-        if (searchQuery.isBlank()) {
-            appGroups
-        } else {
-            val q = searchQuery.lowercase().trim()
-            appGroups.filter {
-                it.appLabel.lowercase().contains(q) || it.packageName.lowercase().contains(q)
-            }
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.82f)
-            .padding(20.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (selectedAppPackage == null) "Widgets" else "App Widgets",
-                style = MaterialTheme.typography.titleLarge
-            )
-            if (selectedAppPackage != null) {
-                TextButton(onClick = { selectedAppPackage = null }) {
-                    Text("← Back to Apps")
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            label = { Text("🔍 Search...") },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
-        )
-
-        AnimatedContent(
-            targetState = selectedAppPackage,
-            transitionSpec = {
-                if (targetState != null) {
-                    (slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(tween(300)))
-                        .togetherWith(slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(300)) + fadeOut(tween(300)))
-                } else {
-                    (slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(300)) + fadeIn(tween(300)))
-                        .togetherWith(slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(tween(300)))
-                }
-            },
-            label = "WidgetLevelTransition",
-            modifier = Modifier.weight(1f)
-        ) { pkg ->
-            if (pkg == null) {
-                // Level 1: Clubbed App Cards
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(filteredGroups, key = { it.packageName }) { group ->
-                        val bitmap = remember(group.appIcon) {
-                            try {
-                                group.appIcon?.toBitmap(width = 96, height = 96)?.asImageBitmap()
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-
-                        Card(
-                            onClick = { selectedAppPackage = group.packageName },
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(14.dp)
-                            ) {
-                                if (bitmap != null) {
-                                    Image(
-                                        bitmap = bitmap,
-                                        contentDescription = group.appLabel,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(group.appLabel.take(1).uppercase())
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = group.appLabel,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${group.providers.size} widget(s)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Level 2: Widgets belonging to the selected app
-                val group = appGroups.find { it.packageName == pkg }
-                val providers = group?.providers ?: emptyList()
-
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(providers, key = { it.provider.className }) { info ->
-                        val label = remember(info) { info.loadLabel(pm) }
-                        val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
-                        val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
-
-                        val previewDrawable = remember(info) {
-                            try {
-                                info.loadPreviewImage(context, 0) ?: info.loadIcon(context, 0)
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-
-                        val previewBitmap = remember(previewDrawable) {
-                            try {
-                                previewDrawable?.toBitmap(width = 120, height = 120)?.asImageBitmap()
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-
-                        Card(
-                            onClick = { onSelectWidgetProvider(info) },
-                            shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.padding(14.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(72.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Color.DarkGray.copy(alpha = 0.3f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (previewBitmap != null) {
-                                        Image(
-                                            bitmap = previewBitmap,
-                                            contentDescription = label,
-                                            modifier = Modifier.size(56.dp)
-                                        )
-                                    } else {
-                                        Text("🧩", fontSize = 32.sp)
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Spacer(modifier = Modifier.height(4.dp))
-
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = "$spanX × $spanY",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -1054,6 +1015,57 @@ fun WorkspaceWallpaper(
     }
 }
 
+fun findNearestAvailableWidgetRegion(
+    targetCol: Int,
+    targetRow: Int,
+    spanX: Int,
+    spanY: Int,
+    maxCols: Int,
+    maxRows: Int,
+    occupied: Set<GridCell>
+): GridCell? {
+    if (canFitRegion(targetCol, targetRow, spanX, spanY, maxCols, maxRows, occupied)) {
+        return GridCell(targetCol, targetRow)
+    }
+
+    var radius = 1
+    while (radius < maxOf(maxCols, maxRows)) {
+        for (r in targetRow - radius..targetRow + radius) {
+            for (c in targetCol - radius..targetCol + radius) {
+                if (canFitRegion(c, r, spanX, spanY, maxCols, maxRows, occupied)) {
+                    return GridCell(c, r)
+                }
+            }
+        }
+        radius++
+    }
+    return null
+}
+
+fun canFitRegion(
+    startCol: Int,
+    startRow: Int,
+    spanX: Int,
+    spanY: Int,
+    maxCols: Int,
+    maxRows: Int,
+    occupied: Set<GridCell>
+): Boolean {
+    val maxVisibleRows = 6
+    val effectiveMaxRows = minOf(6, maxRows)
+    if (startCol < 0 || startRow < 0 || startCol + spanX > maxCols || startRow + spanY > effectiveMaxRows) {
+        return false
+    }
+    for (dx in 0 until spanX) {
+        for (dy in 0 until spanY) {
+            if (GridCell(startCol + dx, startRow + dy) in occupied) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
 fun findNearestEmptyCell(
     targetCol: Int,
     targetRow: Int,
@@ -1070,9 +1082,9 @@ fun findNearestEmptyCell(
         for (r in targetRow - radius..targetRow + radius) {
             for (c in targetCol - radius..targetCol + radius) {
                 if (c in 0 until maxCols && r in 0 until maxRows) {
-                    val candidate = GridCell(c, r)
-                    if (candidate !in occupied) {
-                        return candidate
+                    val coordinate = GridCell(c, r)
+                    if (coordinate !in occupied) {
+                        return coordinate
                     }
                 }
             }
