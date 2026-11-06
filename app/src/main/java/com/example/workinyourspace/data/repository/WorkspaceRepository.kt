@@ -65,6 +65,10 @@ class WorkspaceRepository @Inject constructor(
         whitelistedDAO.deleteWhiteListedApp(whitelistedApp)
     }
 
+    suspend fun getAllWidgets(): List<WorkspaceWidget> = withContext(Dispatchers.IO) {
+        widgetDAO.getAllWidgets()
+    }
+
     suspend fun deleteOrphanedApps(installedPackageName : Set<String>) = withContext(Dispatchers.IO){
         val allAppsInAllWorkSpaces = workspaceDAO.getAllWhitelistedApps()
 
@@ -73,6 +77,18 @@ class WorkspaceRepository @Inject constructor(
         if(orphanedApps.isNotEmpty()){
             workspaceDAO.deleteWhitelistedApps(orphanedApps)
             Log.d("Database Cleanup","All orphaned apps purged across all workspaces")
+        }
+    }
+
+    suspend fun deleteOrphanedWidgets(installedPackageNames: Set<String>, deleteWidgetIdFromHost: (Int) -> Unit) = withContext(Dispatchers.IO) {
+        val allWidgets = widgetDAO.getAllWidgets()
+        val orphanedWidgets = allWidgets.filter { it.providerPackage !in installedPackageNames }
+        if (orphanedWidgets.isNotEmpty()) {
+            orphanedWidgets.forEach { widget ->
+                deleteWidgetIdFromHost(widget.appWidgetId)
+                widgetDAO.deleteWidgetById(widget.id)
+            }
+            Log.d("Database Cleanup", "Purged ${orphanedWidgets.size} orphaned widgets across workspaces")
         }
     }
 

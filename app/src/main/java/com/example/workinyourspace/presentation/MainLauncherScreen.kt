@@ -92,6 +92,12 @@ fun MainLauncherScreen(
         context.startActivity(Intent(context, WorkspaceManagerActivity::class.java))
     }
 
+    LaunchedEffect(appWidgetHost) {
+        if (appWidgetHost != null) {
+            viewModel.checkAndCleanupOrphanedWidgets(appWidgetHost)
+        }
+    }
+
     var pendingInitX by remember { mutableFloatStateOf(20f) }
     var pendingInitY by remember { mutableFloatStateOf(40f) }
 
@@ -99,13 +105,13 @@ fun MainLauncherScreen(
     val widgetConfigureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        val currentPendingId = pendingWidgetId
         if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null) {
-            val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId) ?: pendingWidgetId
+            val widgetId = result.data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, currentPendingId) ?: currentPendingId
             if (widgetId != -1 && appWidgetManager != null) {
                 val info = appWidgetManager.getAppWidgetInfo(widgetId)
                 if (info != null) {
-                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
-                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    val (spanX, spanY) = WidgetUtils.calculateWidgetSpan(info, 4, 6)
                     viewModel.addWidget(
                         WorkspaceWidget(
                             workspaceId = activeWorkspaceId!!,
@@ -120,8 +126,12 @@ fun MainLauncherScreen(
                     )
                 }
             }
-        } else if (pendingWidgetId != -1 && appWidgetHost != null) {
-            appWidgetHost.deleteAppWidgetId(pendingWidgetId)
+        } else if (currentPendingId != -1 && appWidgetHost != null) {
+            try {
+                appWidgetHost.deleteAppWidgetId(currentPendingId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
         pendingWidgetId = -1
     }
@@ -132,8 +142,9 @@ fun MainLauncherScreen(
     val widgetBindLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null && pendingBindWidgetId != -1 && appWidgetManager != null) {
-            val widgetId = pendingBindWidgetId
+        val currentBindId = pendingBindWidgetId
+        if (result.resultCode == Activity.RESULT_OK && activeWorkspaceId != null && currentBindId != -1 && appWidgetManager != null) {
+            val widgetId = currentBindId
             val info = appWidgetManager.getAppWidgetInfo(widgetId)
             if (info != null) {
                 if (info.configure != null) {
@@ -144,8 +155,7 @@ fun MainLauncherScreen(
                     }
                     widgetConfigureLauncher.launch(intent)
                 } else {
-                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
-                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    val (spanX, spanY) = WidgetUtils.calculateWidgetSpan(info, 4, 6)
                     viewModel.addWidget(
                         WorkspaceWidget(
                             workspaceId = activeWorkspaceId!!,
@@ -160,8 +170,12 @@ fun MainLauncherScreen(
                     )
                 }
             }
-        } else if (pendingBindWidgetId != -1 && appWidgetHost != null) {
-            appWidgetHost.deleteAppWidgetId(pendingBindWidgetId)
+        } else if (currentBindId != -1 && appWidgetHost != null) {
+            try {
+                appWidgetHost.deleteAppWidgetId(currentBindId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
         pendingBindWidgetId = -1
     }
@@ -188,8 +202,7 @@ fun MainLauncherScreen(
                     }
                     widgetConfigureLauncher.launch(intent)
                 } else {
-                    val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
-                    val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                    val (spanX, spanY) = WidgetUtils.calculateWidgetSpan(info, 4, 6)
                     viewModel.addWidget(
                         WorkspaceWidget(
                             workspaceId = activeWorkspaceId!!,
@@ -235,11 +248,11 @@ fun MainLauncherScreen(
             targetState = isSelectingWorkspace,
             transitionSpec = {
                 if (targetState) {
-                    (scaleIn(initialScale = 1.15f, animationSpec = tween(400)) + fadeIn(tween(400)))
-                        .togetherWith(scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(tween(400)))
+                    (scaleIn(initialScale = 1.05f, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) + fadeIn(tween(280)))
+                        .togetherWith(scaleOut(targetScale = 0.95f, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) + fadeOut(tween(280)))
                 } else {
-                    (scaleIn(initialScale = 0.8f, animationSpec = tween(400)) + fadeIn(tween(400)))
-                        .togetherWith(scaleOut(targetScale = 1.15f, animationSpec = tween(400)) + fadeOut(tween(400)))
+                    (scaleIn(initialScale = 0.95f, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) + fadeIn(tween(280)))
+                        .togetherWith(scaleOut(targetScale = 1.05f, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) + fadeOut(tween(280)))
                 }
             },
             label = "WorkspaceZoomTransition",
@@ -250,6 +263,7 @@ fun MainLauncherScreen(
                     workspaces = workspaces,
                     activeWorkspaceId = activeWorkspaceId,
                     viewModel = viewModel,
+                    appWidgetHost = appWidgetHost,
                     onSelectWorkspace = { id ->
                         if (id != null) {
                             viewModel.activateWorkspace(id)
@@ -362,7 +376,7 @@ fun MainLauncherScreen(
                                 val isPlaced = app.packageName in placedPackageNames
                                 val isSelected = app.packageName in selectedPackageNames
 
-                                val bitmap = remember(app.icon) {
+                                val bitmap = app.iconBitmap ?: remember(app.icon) {
                                     try {
                                         app.icon.toBitmap(width = 96, height = 96).asImageBitmap()
                                     } catch (e: Exception) {
