@@ -19,6 +19,9 @@ interface WorkspaceWidgetDAO {
     @Query("SELECT * FROM workspace_widgets WHERE workspace_id = :workspaceId")
     fun getWorkspaceWidgets(workspaceId: Int): Flow<List<WorkspaceWidget>>
 
+    @Query("SELECT * FROM workspace_widgets")
+    suspend fun getAllWidgets(): List<WorkspaceWidget>
+
     @Query("DELETE FROM workspace_widgets WHERE widget_id = :widgetId")
     suspend fun deleteWidgetById(widgetId: Int)
 

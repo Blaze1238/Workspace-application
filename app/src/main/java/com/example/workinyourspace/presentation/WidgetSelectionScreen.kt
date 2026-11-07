@@ -44,6 +44,7 @@ fun WidgetSelectionScreen(
     workspaceId: Int,
     workspaceWidgets: List<WorkspaceWidget>,
     placedApps: List<WhitelistedApp>,
+    whitelistedApps: List<WhitelistedApp> = emptyList(),
     gridCols: Int,
     gridRows: Int,
     cellWidthPx: Float,
@@ -61,35 +62,55 @@ fun WidgetSelectionScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showWidgetSpaceErrorDialog by remember { mutableStateOf(false) }
 
-    val installedProviders = remember {
-        try {
-            appWidgetManager.installedProviders
-        } catch (e: Exception) {
-            emptyList<AppWidgetProviderInfo>()
-        }
+    val whitelistedPackageNames = remember(whitelistedApps) {
+        whitelistedApps.map { it.packageName }.toSet()
     }
 
-    val appGroups = remember(installedProviders) {
-        installedProviders.groupBy { it.provider.packageName }.map { (pkg, providers) ->
-            val first = providers.first()
-            val appLabel = try {
-                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    val appGroupsState = produceState<List<AppWidgetGroup>>(initialValue = emptyList(), key1 = whitelistedPackageNames) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val allProviders = appWidgetManager.installedProviders
+                val filteredProviders = allProviders.filter { providerInfo ->
+                    val pkg = providerInfo.provider.packageName
+                    if (pkg in whitelistedPackageNames) {
+                        true
+                    } else {
+                        try {
+                            val appInfo = pm.getApplicationInfo(pkg, 0)
+                            val isSystemApp = (appInfo.flags and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+                            val isKnownSystemWidget = pkg.startsWith("com.android.") || pkg.startsWith("com.google.android.") || pkg.contains("clock") || pkg.contains("weather")
+                            isSystemApp || isKnownSystemWidget
+                        } catch (e: Exception) {
+                            false
+                        }
+                    }
+                }
+
+                filteredProviders.groupBy { it.provider.packageName }.map { (pkg, providers) ->
+                    val first = providers.first()
+                    val appLabel = try {
+                        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                    } catch (e: Exception) {
+                        first.loadLabel(pm).toString()
+                    }
+                    val appIcon = try {
+                        pm.getApplicationIcon(pkg)
+                    } catch (e: Exception) {
+                        first.loadIcon(context, 0)
+                    }
+                    AppWidgetGroup(
+                        packageName = pkg,
+                        appLabel = appLabel,
+                        appIcon = appIcon,
+                        providers = providers
+                    )
+                }.sortedBy { it.appLabel.lowercase() }
             } catch (e: Exception) {
-                first.loadLabel(pm).toString()
+                emptyList()
             }
-            val appIcon = try {
-                pm.getApplicationIcon(pkg)
-            } catch (e: Exception) {
-                first.loadIcon(context, 0)
-            }
-            AppWidgetGroup(
-                packageName = pkg,
-                appLabel = appLabel,
-                appIcon = appIcon,
-                providers = providers
-            )
-        }.sortedBy { it.appLabel.lowercase() }
+        }
     }
+    val appGroups = appGroupsState.value
 
     val filteredGroups = remember(appGroups, searchQuery) {
         if (searchQuery.isBlank()) {
@@ -107,8 +128,7 @@ fun WidgetSelectionScreen(
         if (isAlreadyAdded) {
             Toast.makeText(context, "This widget is already added to this workspace!", Toast.LENGTH_SHORT).show()
         } else {
-            val spanX = ((info.minWidth + 70) / 80).coerceIn(1, gridCols)
-            val spanY = ((info.minHeight + 70) / 80).coerceIn(1, gridRows)
+            val (spanX, spanY) = WidgetUtils.calculateWidgetSpan(info, gridCols, gridRows)
 
             val occupied = mutableSetOf<GridCell>()
             placedApps.forEach { app ->
@@ -270,8 +290,7 @@ fun WidgetSelectionScreen(
                             val isAlreadyAdded = remember(info, workspaceWidgets) {
                                 workspaceWidgets.any { it.providerClass == info.provider.className }
                             }
-                            val spanX = ((info.minWidth + 70) / 80).coerceIn(1, 4)
-                            val spanY = ((info.minHeight + 70) / 80).coerceIn(1, 4)
+                            val (spanX, spanY) = remember(info) { WidgetUtils.calculateWidgetSpan(info, 4, 6) }
 
                             val previewDrawable = remember(info) {
                                 try {

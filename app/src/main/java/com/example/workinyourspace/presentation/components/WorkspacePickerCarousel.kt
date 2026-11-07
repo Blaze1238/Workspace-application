@@ -59,6 +59,7 @@ fun WorkspacePickerCarousel(
     workspaces: List<Workspace>,
     activeWorkspaceId: Int?,
     viewModel: WorkspaceViewModel,
+    appWidgetHost: android.appwidget.AppWidgetHost? = null,
     onSelectWorkspace: (Int?) -> Unit,
     onConfigureWhitelist: (Workspace) -> Unit,
     onClosePicker: () -> Unit,
@@ -355,7 +356,7 @@ fun WorkspacePickerCarousel(
                 confirmButton = {
                     Button(
                         onClick = {
-                            viewModel.deleteWorkspace(workspace)
+                            viewModel.deleteWorkspace(workspace, appWidgetHost)
                             deletingWorkspace = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

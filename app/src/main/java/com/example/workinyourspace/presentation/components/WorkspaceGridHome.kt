@@ -170,10 +170,10 @@ fun WorkspaceGridHome(
         }
     }
 
-    val nestedScrollConnection = remember {
+    val nestedScrollConnection = remember(showWidgetSelectionScreen) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < -20f) {
+                if (!showWidgetSelectionScreen && available.y < -20f) {
                     onOpenAppDrawer()
                 }
                 return Offset.Zero
@@ -200,27 +200,6 @@ fun WorkspaceGridHome(
 
         val iconWidthPx = with(density) { 72.dp.toPx() }
         val iconHeightPx = with(density) { 72.dp.toPx() }
-
-        if (showWidgetSelectionScreen && appWidgetManager != null && workspaceId != null) {
-            WidgetSelectionScreen(
-                workspaceId = workspaceId,
-                workspaceWidgets = workspaceWidgets,
-                placedApps = placedApps,
-                gridCols = gridCols,
-                gridRows = maxVisibleRows,
-                cellWidthPx = cellWidthPx,
-                cellHeightPx = cellHeightPx,
-                appWidgetManager = appWidgetManager,
-                viewModel = viewModel,
-                onBackClick = { showWidgetSelectionScreen = false },
-                onAddSystemWidget = { providerInfo, initX, initY ->
-                    showWidgetSelectionScreen = false
-                    onAddSystemWidget(providerInfo, initX, initY)
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-            return@BoxWithConstraints
-        }
 
         val scrollState = rememberScrollState()
 
@@ -387,17 +366,33 @@ fun WorkspaceGridHome(
                                 }
                             )
                     ) {
-                        if (appWidgetHost != null && appWidgetManager != null) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    val info = appWidgetManager.getAppWidgetInfo(widget.appWidgetId)
-                                    if (info != null) {
-                                        appWidgetHost.createView(ctx, widget.appWidgetId, info).apply {
-                                            setAppWidget(widget.appWidgetId, info)
-                                        }
-                                    } else {
-                                        android.view.View(ctx)
+                        val widgetView = remember(widget.appWidgetId, widget.providerClass) {
+                            if (appWidgetHost != null && appWidgetManager != null) {
+                                val info = appWidgetManager.getAppWidgetInfo(widget.appWidgetId)
+                                if (info != null) {
+                                    appWidgetHost.createView(context, widget.appWidgetId, info).apply {
+                                        setAppWidget(widget.appWidgetId, info)
                                     }
+                                } else null
+                            } else null
+                        }
+
+                        if (widgetView != null && appWidgetManager != null) {
+                            AndroidView(
+                                factory = {
+                                    (widgetView.parent as? android.view.ViewGroup)?.removeView(widgetView)
+                                    widgetView
+                                },
+                                update = {
+                                    com.example.workinyourspace.presentation.WidgetUtils.updateWidgetSizeOptions(
+                                        appWidgetManager = appWidgetManager,
+                                        appWidgetId = widget.appWidgetId,
+                                        spanX = widget.spanX,
+                                        spanY = widget.spanY,
+                                        cellWidthPx = cellWidthPx,
+                                        cellHeightPx = cellHeightPx,
+                                        density = density.density
+                                    )
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -425,7 +420,7 @@ fun WorkspaceGridHome(
                     var offsetY by remember(whitelistedApp.id, whitelistedApp.position.y) { mutableFloatStateOf(whitelistedApp.position.y) }
                     var isDragging by remember { mutableStateOf(false) }
 
-                    val bitmap = remember(appInfo?.icon) {
+                    val bitmap = appInfo?.iconBitmap ?: remember(appInfo?.icon) {
                         try {
                             appInfo?.icon?.toBitmap(width = 96, height = 96)?.asImageBitmap()
                         } catch (e: Exception) {
@@ -945,22 +940,47 @@ fun WorkspaceGridHome(
             }
         }
 
-        // Confirm Widget Delete Dialog
+        // Confirm Widget Options / Delete Dialog
         selectedWidgetForAction?.let { widget ->
+            val info = remember(widget.appWidgetId) { appWidgetManager?.getAppWidgetInfo(widget.appWidgetId) }
+            val configureActivity = info?.configure
+
             AlertDialog(
                 onDismissRequest = { selectedWidgetForAction = null },
-                title = { Text("Remove Widget?") },
-                text = { Text("Are you sure you want to remove this widget from your workspace?") },
+                title = { Text("Widget Options") },
+                text = {
+                    Text("Choose an action for this widget or remove it from your home screen workspace.")
+                },
                 confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.deleteWidgetById(widget.id)
-                            appWidgetHost?.deleteAppWidgetId(widget.appWidgetId)
-                            selectedWidgetForAction = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Remove Widget")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (configureActivity != null) {
+                            Button(
+                                onClick = {
+                                    val intent = android.content.Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                                        component = configureActivity
+                                        putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, widget.appWidgetId)
+                                    }
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                    selectedWidgetForAction = null
+                                }
+                            ) {
+                                Text("Reconfigure")
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                viewModel.deleteWidgetById(widget.id)
+                                appWidgetHost?.deleteAppWidgetId(widget.appWidgetId)
+                                selectedWidgetForAction = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Remove Widget")
+                        }
                     }
                 },
                 dismissButton = {
@@ -969,6 +989,41 @@ fun WorkspaceGridHome(
                     }
                 }
             )
+        }
+
+        // Widget Selection Screen Animated Overlay (Stock Android Slide-Up Transition)
+        if (appWidgetManager != null && workspaceId != null) {
+            AnimatedVisibility(
+                visible = showWidgetSelectionScreen,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                ) + fadeIn(animationSpec = tween(350)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(300)),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                WidgetSelectionScreen(
+                    workspaceId = workspaceId,
+                    workspaceWidgets = workspaceWidgets,
+                    placedApps = placedApps,
+                    whitelistedApps = whitelistedApps,
+                    gridCols = gridCols,
+                    gridRows = maxVisibleRows,
+                    cellWidthPx = cellWidthPx,
+                    cellHeightPx = cellHeightPx,
+                    appWidgetManager = appWidgetManager,
+                    viewModel = viewModel,
+                    onBackClick = { showWidgetSelectionScreen = false },
+                    onAddSystemWidget = { providerInfo, initX, initY ->
+                        showWidgetSelectionScreen = false
+                        onAddSystemWidget(providerInfo, initX, initY)
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

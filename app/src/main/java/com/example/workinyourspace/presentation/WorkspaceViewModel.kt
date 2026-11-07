@@ -98,12 +98,37 @@ class WorkspaceViewModel @Inject constructor(
         addWorkspace(name = name, isDefault = false, wallpaperUri = wallpaperUri)
     }
 
-    fun deleteWorkspace(workspace: Workspace) {
+    fun deleteWorkspace(workspace: Workspace, appWidgetHost: android.appwidget.AppWidgetHost? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             if (activeWorkspaceID.value == workspace.id) {
                 deactivateWorkspace()
             }
+            if (appWidgetHost != null) {
+                val widgets = workspaceRepo.getWorkspaceWidgets(workspace.id).firstOrNull() ?: emptyList()
+                widgets.forEach { widget ->
+                    try {
+                        appWidgetHost.deleteAppWidgetId(widget.appWidgetId)
+                    } catch (e: Exception) {
+                        Log.e("WorkspaceViewModel", "Failed to delete widget ID ${widget.appWidgetId} from host", e)
+                    }
+                }
+            }
             workspaceRepo.deleteWorkspace(workspace)
+        }
+    }
+
+    fun checkAndCleanupOrphanedWidgets(appWidgetHost: android.appwidget.AppWidgetHost) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val installedPackageNames = _installedApps.value.map { it.packageName }.toSet()
+            if (installedPackageNames.isNotEmpty()) {
+                workspaceRepo.deleteOrphanedWidgets(installedPackageNames) { appWidgetId ->
+                    try {
+                        appWidgetHost.deleteAppWidgetId(appWidgetId)
+                    } catch (e: Exception) {
+                        Log.e("WorkspaceViewModel", "Failed to delete orphaned widget ID $appWidgetId", e)
+                    }
+                }
+            }
         }
     }
 
