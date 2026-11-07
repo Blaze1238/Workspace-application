@@ -234,41 +234,7 @@ class WorkspaceViewModel @Inject constructor(
             if (homeWs != null) {
                 val homeApps = workspaceRepo.getWhitelistedApps(homeWs.id).firstOrNull() ?: emptyList()
                 if (homeApps.isEmpty()) {
-                    val defaultPackages = listOf(
-                        "com.android.chrome",
-                        "com.google.android.youtube",
-                        "com.google.android.apps.maps",
-                        "com.google.android.gm",
-                        "com.android.vending",
-                        "com.google.android.dialer",
-                        "com.android.dialer",
-                        "com.google.android.deskclock",
-                        "com.android.camera"
-                    )
-
-                    var cellIndex = 0
-                    val cols = 4
-                    // Strictly non-overlapping grid positions: distinct columns (0..3) and rows (0, 1, 2)
-                    installedPackageNames.forEach { pkg ->
-                        if (defaultPackages.any { pkg.contains(it) || it.contains(pkg) } || cellIndex < 4) {
-                            if (cellIndex < 8) {
-                                val c = cellIndex % cols
-                                val r = cellIndex / cols
-                                // Assign standardized grid offset coordinates
-                                val x = c * 180f + 16f
-                                val y = r * 200f + 20f
-                                workspaceRepo.addWhitelistedApp(
-                                    WhitelistedApp(
-                                        workspaceId = homeWs.id,
-                                        packageName = pkg,
-                                        customIntent = null,
-                                        position = FreeformPosition(x = x, y = y)
-                                    )
-                                )
-                                cellIndex++
-                            }
-                        }
-                    }
+                    workspaceRepo.createDefaultHomeWorkspace(homeWs.id, installedPackageNames)
                 }
             }
         }
