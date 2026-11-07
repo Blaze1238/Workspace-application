@@ -8,9 +8,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.example.workinyourspace.presentation.MainLauncherScreen
+import com.example.workinyourspace.presentation.PermissionOnboardingScreen
 import com.example.workinyourspace.presentation.WorkspaceViewModel
+import com.example.workinyourspace.presentation.components.isAccessibilityServiceEnabled
+import com.example.workinyourspace.presentation.components.isNotificationListenerEnabled
 import com.example.workinyourspace.ui.theme.WorkInYourSpaceTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -32,12 +39,41 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WorkInYourSpaceTheme {
-                MainLauncherScreen(
-                    viewModel = viewModel,
-                    appWidgetHost = appWidgetHost,
-                    appWidgetManager = appWidgetManager,
-                    modifier = Modifier.fillMaxSize()
-                )
+                val context = applicationContext
+                var hasPermissions by remember {
+                    mutableStateOf(
+                        isAccessibilityServiceEnabled(context) && isNotificationListenerEnabled(context)
+                    )
+                }
+
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            hasPermissions = isAccessibilityServiceEnabled(context) && isNotificationListenerEnabled(context)
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                if (hasPermissions) {
+                    MainLauncherScreen(
+                        viewModel = viewModel,
+                        appWidgetHost = appWidgetHost,
+                        appWidgetManager = appWidgetManager,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    PermissionOnboardingScreen(
+                        onPermissionsGranted = {
+                            hasPermissions = true
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }

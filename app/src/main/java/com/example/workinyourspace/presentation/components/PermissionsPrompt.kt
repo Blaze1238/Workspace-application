@@ -38,6 +38,49 @@ fun isNotificationListenerEnabled(context: Context): Boolean {
     return flat.contains(context.packageName, ignoreCase = true)
 }
 
+fun openAccessibilitySettings(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        try {
+            val generalIntent = Intent(Settings.ACTION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(generalIntent)
+        } catch (e2: Exception) {
+            // Ignore
+        }
+    }
+}
+
+fun openNotificationAccessSettings(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        try {
+            val fallbackIntent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(fallbackIntent)
+        } catch (e2: Exception) {
+            try {
+                val generalIntent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(generalIntent)
+            } catch (e3: Exception) {
+                // Ignore
+            }
+        }
+    }
+}
+
 @Composable
 fun PermissionsPrompt(
     modifier: Modifier = Modifier
@@ -124,8 +167,7 @@ fun PermissionsPrompt(
                     title = "App Blocker (Accessibility)",
                     isGranted = isAccessibilityGranted,
                     onGrantClick = {
-                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                        context.startActivity(intent)
+                        openAccessibilitySettings(context)
                     }
                 )
 
@@ -136,8 +178,7 @@ fun PermissionsPrompt(
                     title = "Notification Blocker Access",
                     isGranted = isNotificationGranted,
                     onGrantClick = {
-                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                        context.startActivity(intent)
+                        openNotificationAccessSettings(context)
                     }
                 )
             }
